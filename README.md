@@ -30,6 +30,10 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 | 源码视图 | **源码** 开关把整个面板切成原始文档 |
 | 文件在别处被改 | 未保存的内容**不会被覆盖**，工具栏给出 *仍然覆盖* 或 *从磁盘重新载入*；在你再次编辑前暂停自动保存 |
 | 只读渲染视图 | 仍然可用：预览的渲染器下拉里可以选回内置的 **Markdown** |
+| 草稿 | 每个标签页的未保存内容，在切换标签、切换渲染器、切到源码再切回来时都不丢 |
+| 界面语言 | 中文 / 英文跟随界面语言（按钮、状态、提示文案），两种语言都有测试兜底 |
+| 写入 | 经 `ctx.fs.writeText` 走文件系统后端：`read-only` 会话被拒绝，`workspace-write` 只能写工作区内；带上版本即 compare-and-set |
+| 失败降级 | 渲染器不可用时退回纯源码编辑；单个块渲染出错时退回该块原文，不会让整个面板变空 |
 
 ## 设计
 
@@ -121,6 +125,10 @@ itself, as its own Remote namespace, and adds a renderer that uses it.
 | Source view | The **Source** toggle switches the whole pane to the raw document |
 | File changed elsewhere | The dirty buffer is **kept**, and the toolbar offers *Overwrite* or *Load from disk*; auto-save pauses until you edit again |
 | Read-only rendered view | Still available: the preview's renderer dropdown lists the built-in **Markdown** viewer |
+| Drafts | A tab's unsaved text survives switching tabs, switching renderers, and going to the source view and back |
+| UI language | Chinese and English copy follows the interface language, with tests pinning both dictionaries |
+| Writes | Through `ctx.fs.writeText`, so the filesystem backend keeps the fence: a `read-only` session is denied, `workspace-write` stays inside the workspace root, and the version makes it compare-and-set |
+| Degrading | Without the renderer it falls back to source-only editing; a block that fails to render falls back to its own raw text instead of blanking the pane |
 
 ## Design
 

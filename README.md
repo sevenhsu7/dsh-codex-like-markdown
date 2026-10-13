@@ -1,5 +1,7 @@
 # dsh-codex-like-markdown
 
+English | [中文](README.zh.md)
+
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that
 makes the right Sidebar's Markdown preview **editable in place** — the document
 keeps its rendered look, and clicking a paragraph, a table cell, or a heading

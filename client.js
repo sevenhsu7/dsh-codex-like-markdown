@@ -127,54 +127,6 @@ window.__ModuleLoader__.load({
 		const passthrough = () => ({ parse: (value) => value })
 
 		/** The Client projection of the plugin's own Remote namespace. */
-		/**
-		 * One descriptor of the same shape as the real one, for a namespace of its
-		 * own, so a mount that hangs can be narrowed to the contribution or to a
-		 * field inside it.
-		 * @param namespace - name to mount under.
-		 * @returns a descriptor.
-		 */
-		function probeDescriptor(namespace) {
-			return {
-				id: PACKAGE + '#' + namespace + '/write',
-				service: namespace,
-				namespace,
-				method: 'write',
-				invocation: { kind: 'direct' },
-				parameters: [{
-					name: 'request',
-					wire: 'request',
-					source: 'json',
-					codec: { mode: 'strict', typeSymbol: PACKAGE + '#' + namespace + '/write:request', create: passthrough },
-				}],
-				result: { mode: 'strict', typeSymbol: PACKAGE + '#' + namespace + '/write:result', create: passthrough },
-			}
-		}
-
-		/**
-		 * Mount progressively more of this plugin's shape and record what each does.
-		 * @param ctx - the plugin's context.
-		 */
-		async function probeMounts(ctx) {
-			const cases = [
-				['empty', { package: PACKAGE + '-probe', descriptors: [] }],
-				['simple', { package: PACKAGE + '-probe', descriptors: [probeDescriptor('mdProbeSimple')] }],
-				['real', CONTRIBUTION],
-			]
-			for (const [label, contribution] of cases) {
-				let outcome
-				try {
-					outcome = await Promise.race([
-						Promise.resolve().then(() => ctx.remote.$mount(contribution)).then(() => 'ok', (error) => 'error: ' + messageOf(error)),
-						new Promise((resolve) => setTimeout(() => resolve('pending'), 3000)),
-					])
-				} catch (error) {
-					outcome = 'threw: ' + messageOf(error)
-				}
-				writerState.probes = (writerState.probes === undefined ? '' : writerState.probes + ' · ') + label + '=' + outcome
-			}
-		}
-
 		const CONTRIBUTION = {
 			package: PACKAGE,
 			descriptors: [
@@ -1537,25 +1489,6 @@ window.__ModuleLoader__.load({
 
 			// The mount is a browser-side step with no host-side trace, so while
 			// the writer is not ready the pane says what happened to it.
-			// Shown unconditionally while this is being diagnosed: a mount failure
-			// happens in the browser and leaves no host-side trace, so this strip is
-			// the only place the reason can be read. The probes separate "this
-			// namespace is stuck" from "the whole mount path is stuck".
-			const probe = (() => {
-				try {
-					const gateway = typeof ctx.get === 'function' ? ctx.get('remote') : undefined
-					const shipped = typeof ctx.get === 'function' ? ctx.get('remote.workspaceFiles') : undefined
-					return 'remote: ' + (gateway === undefined ? 'absent' : 'present')
-						+ ' · $mount: ' + (gateway !== undefined && typeof gateway.$mount === 'function' ? 'fn' : 'missing')
-						+ ' · shipped namespace: ' + (shipped === undefined ? 'absent' : 'present')
-				} catch (error) {
-					return 'probe threw: ' + messageOf(error)
-				}
-			})()
-			const writerReport = h('div', { className: P + '-notice', key: 'writer' },
-				'mount: ' + writerState.mount + ' · namespace: ' + writerState.namespace + ' · ' + probe
-				+ (writerState.probes === undefined ? '' : ' · probes: ' + writerState.probes))
-
 			const dirty = state.text !== state.savedText
 			// The resource's version moving past the one this buffer is based on is
 			// the only reliable sign of a foreign write: our own save is not yet
@@ -1734,7 +1667,6 @@ window.__ModuleLoader__.load({
 						onClick: () => void save({}),
 					}, t('action.save')),
 				]),
-				writerReport,
 				body,
 			])
 		}
@@ -1841,7 +1773,6 @@ window.__ModuleLoader__.load({
 			// this bundle must not mount it twice; one process-wide promise keeps
 			// the namespace alive across reloads.
 			const record = (error) => { writerState.mount = error === undefined ? 'ok' : messageOf(error) }
-			if (writerState.probes === undefined) probeMounts(ctx)
 			try {
 				const registration = ctx.inject(['remote.' + NAMESPACE], (bodyCtx) => {
 					writerState.namespace = 'ready'

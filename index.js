@@ -120,9 +120,18 @@ export function apply(ctx) {
       return { status: 'error', message: 'no filesystem service is available in this profile' }
     }
     const sessionId = typeof input.sessionId === 'string' ? input.sessionId : undefined
+    // The sandbox is a per-call decision: the session's own mode and cwd, not the
+    // deployment default. Without it a workspace-write session is fenced by the
+    // profile's fallback mode and every write is denied, which is what the tool
+    // layer avoids by resolving a policy for each mutation the same way.
+    const sessions = ctx.get('sessions')
+    const session = sessionId !== undefined && sessions !== undefined && typeof sessions.get === 'function'
+      ? sessions.get(sessionId)
+      : undefined
+    const policy = policyFor(ctx, session)
     let target
     try {
-      target = await fs.resolve(path, { cwd: workspaceRoot(sessionId), signal })
+      target = await fs.resolve(path, { cwd: policy !== undefined && policy.workspaceRoot !== undefined ? policy.workspaceRoot : workspaceRoot(sessionId), signal })
     } catch (error) {
       return failureOf(error)
     }
@@ -130,7 +139,7 @@ export function apply(ctx) {
       ? { kind: 'replaceIfVersion', version: input.expectedVersion }
       : undefined
     try {
-      const outcome = await fs.writeText(target, input.content, expected, signal)
+      const outcome = await fs.writeText(target, input.content, expected, signal, policy)
       return {
         status: 'saved',
         absolutePath: target.displayPath,
@@ -157,6 +166,26 @@ export function apply(ctx) {
     invocations: [INVOCATION],
     model: { services: [], events: [], objects: [] },
   }), 'markdown-editor: remote descriptor')
+}
+
+/**
+ * The sandbox policy a write runs under.
+ *
+ * The deployment's own resolver decides the mode: an explicit per-session mode
+ * outranks the session's last `sandbox/mode` event, which outranks the profile
+ * default. Resolving it here — rather than hard-coding a mode — is what keeps a
+ * read-only session read-only and a workspace-write session able to save inside
+ * its own root.
+ *
+ * @param ctx - the plugin's host context.
+ * @param session - the Agent session the preview belongs to, when it is live.
+ * @returns the policy to pass to the filesystem, or `undefined` to let it use
+ *   its own default.
+ */
+function policyFor(ctx, session) {
+  const sandboxPolicy = ctx.get('sandboxPolicy')
+  if (sandboxPolicy === undefined || typeof sandboxPolicy.resolve !== 'function') return undefined
+  return session === undefined ? sandboxPolicy.resolve({}) : sandboxPolicy.resolve({ session })
 }
 
 /** Filesystem error codes the browser branches on, mapped to plugin statuses. */

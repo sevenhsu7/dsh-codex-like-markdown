@@ -1758,8 +1758,10 @@ window.__ModuleLoader__.load({
 			// The contribution is owned by the Remote service, so an HMR reload of
 			// this bundle must not mount it twice; one process-wide promise keeps
 			// the namespace alive across reloads.
-			const mounts = globalThis
-			if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined) {
+			let mountError
+			try {
+				const mounts = globalThis
+				if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined) {
 				const attempt = ctx.remote.$mount(CONTRIBUTION).then(() => undefined, (error) => {
 					// Only "already mounted" is terminal. A failure must not be
 					// cached, or every later reload would inherit it.
@@ -1771,7 +1773,6 @@ window.__ModuleLoader__.load({
 			}
 			// Wait for the namespace, but never forever: a mount that hangs must
 			// still leave a pane that says so rather than a plugin stuck loading.
-			let mountError
 			let timer
 			const timeout = new Promise((resolve) => {
 				timer = setTimeout(() => resolve('the writer namespace did not answer'), 4000)
@@ -1783,6 +1784,12 @@ window.__ModuleLoader__.load({
 				])
 			} finally {
 				if (timer !== undefined) clearTimeout(timer)
+			}
+			} catch (error) {
+				// A mount that throws must not end apply: an apply that stops here
+				// leaves the preview reporting itself unavailable with nothing on
+				// screen to say why, which is how the failure stayed invisible.
+				mountError = messageOf(error)
 			}
 			if (mountError !== undefined) {
 				console.warn('markdown-editor: the writer namespace did not mount', mountError)
@@ -1799,7 +1806,8 @@ window.__ModuleLoader__.load({
 			// registered inside that injected context, which is how the shipped
 			// client consumes its own namespaces; without the mount there is no
 			// writer, so there is no body to offer an editing pane that cannot save.
-			const registration = ctx.inject(['remote.' + NAMESPACE, 'slots', 'documentPreviews', 'locale'], (bodyCtx) => {
+			try {
+				const registration = ctx.inject(['remote.' + NAMESPACE, 'slots', 'documentPreviews', 'locale'], (bodyCtx) => {
 				bodyCtx.slots.inject('sidebar.right.tab.document', () => bodyCtx.slots.register({
 					name: 'sidebar.right.tab.document',
 					key: IMPLEMENTATION_ID,
@@ -1808,10 +1816,18 @@ window.__ModuleLoader__.load({
 			})
 			// The returned thenable resolves when the injected context is ready;
 			// a failure there must be visible rather than an unhandled rejection.
-			if (registration !== undefined && registration !== null && typeof registration.catch === 'function') {
-				registration.catch((error) => {
-					console.warn('markdown-editor: could not offer the editing pane', error)
-				})
+				if (registration !== undefined && registration !== null && typeof registration.catch === 'function') {
+					registration.catch((error) => {
+						console.warn('markdown-editor: could not register the editing pane', error)
+					})
+				}
+			} catch (error) {
+				console.warn('markdown-editor: could not register the editing pane', error)
+				ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
+					name: 'sidebar.right.tab.document',
+					key: IMPLEMENTATION_ID,
+					locale: LOCALE_NS,
+				}, createNoticeBody(messageOf(error), t)))
 			}
 		}
 

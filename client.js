@@ -1248,8 +1248,12 @@ window.__ModuleLoader__.load({
 								singleLine: true,
 								html: cell.html,
 								typography: cell.typography,
+								// Visible from the first paint. Hiding it until the cell is
+								// measured means a measurement that never arrives is
+								// indistinguishable from a click that did nothing, which is
+								// exactly how this looked when it was reported broken.
 								style: rect === null
-									? { position: 'absolute', left: 0, top: 0, visibility: 'hidden' }
+									? { position: 'absolute', left: 0, top: 0, zIndex: 3, background: 'var(--dsw-alias-bg-base)' }
 									: {
 										position: 'absolute',
 										left: rect.left,

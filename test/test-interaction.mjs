@@ -767,6 +767,7 @@ await flush()
 check('clicking a cell opens a cell surface', find(tree, byClass('dshMdEditor-cell')) !== undefined)
 check('the table stays rendered underneath', renderedBlocks().length === 1, String(renderedBlocks().length))
 check('no whole-block surface replaces the table', find(tree, byClass('dshMdEditor-rich')) !== undefined && find(tree, byClass('dshMdEditor-cell')) !== undefined)
+check('the cell surface is placed on its cell, not left unmeasured', find(tree, byClass('dshMdEditor-rich')).props.style.left !== undefined && find(tree, byClass('dshMdEditor-rich')).props.style.width !== undefined, JSON.stringify(find(tree, byClass('dshMdEditor-rich')).props.style))
 check('the cell surface is a single-line textbox', find(tree, byClass('dshMdEditor-cell')).props['aria-multiline'] === 'false')
 check('the surface takes the cell type, not the type of its first emphasized run', find(tree, byClass('dshMdEditor-cell')).props.style.fontWeight === '400', String(find(tree, byClass('dshMdEditor-cell')).props.style.fontWeight))
 

@@ -1074,6 +1074,48 @@ window.__ModuleLoader__.load({
 			}
 			closeCellRef.current = closeCell
 
+			// Re-measure after every render: typing changes the row, and the surface
+			// has to follow the cell rather than drift away from it. Losing this
+			// effect is what made the cell surface invisible -- it opened the whole
+			// time, with no box to be placed in -- so a measurement failure now says
+			// so instead of silently leaving the surface unplaced.
+			React.useEffect(() => {
+				const anchors = cellRef.current === null ? null : cellRef.current.anchors
+				if (cell === null || anchors === null || anchors === undefined) return
+				let next
+				try {
+					const cellBox = anchors.element.getBoundingClientRect()
+					const baseBox = anchors.base.getBoundingClientRect()
+					const computed = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(anchors.element) : undefined
+					const edge = (name) => {
+						const value = computed === undefined ? 0 : parseFloat(computed[name])
+						return Number.isFinite(value) ? value : 0
+					}
+					const left = edge('borderLeftWidth')
+					const right = edge('borderRightWidth')
+					const top = edge('borderTopWidth')
+					const bottom = edge('borderBottomWidth')
+					// The cell's content box, not its border box: the table's own
+					// rules have to stay visible while a cell is edited.
+					next = {
+						left: cellBox.left - baseBox.left + left,
+						top: cellBox.top - baseBox.top + top,
+						width: Math.max(0, cellBox.width - left - right),
+						height: Math.max(0, cellBox.height - top - bottom),
+						background: computed === undefined || computed.backgroundColor === 'rgba(0, 0, 0, 0)'
+							? 'var(--dsw-alias-bg-base)'
+							: computed.backgroundColor,
+					}
+				} catch (error) {
+					closeCell()
+					flash(t('start.failed') + messageOf(error))
+					return
+				}
+				setRect((previous) => (previous !== null && previous.left === next.left && previous.top === next.top
+					&& previous.width === next.width && previous.height === next.height
+					&& previous.background === next.background ? previous : next))
+			})
+
 			/**
 			 * Start editing one block where the user clicked.
 			 * @param block - the clicked block.
@@ -1228,12 +1270,10 @@ window.__ModuleLoader__.load({
 								singleLine: true,
 								html: cell.html,
 								typography: cell.typography,
-								// Visible from the first paint. Hiding it until the cell is
-								// measured means a measurement that never arrives is
-								// indistinguishable from a click that did nothing, which is
-								// exactly how this looked when it was reported broken.
+								// Hidden only until the cell's box arrives, and a failure to
+								// measure is reported rather than left invisible.
 								style: rect === null
-									? { position: 'absolute', left: 0, top: 0, zIndex: 3, background: 'var(--dsw-alias-bg-base)' }
+									? { position: 'absolute', left: 0, top: 0, visibility: 'hidden' }
 									: {
 										position: 'absolute',
 										left: rect.left,

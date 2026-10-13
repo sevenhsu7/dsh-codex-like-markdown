@@ -218,6 +218,21 @@ const unmountedCtx = Object.assign({}, fakeCtx, {
 await pluginObject.apply(unmountedCtx)
 check('no editing pane is offered when the writer is missing', bodyWithoutNamespace === false)
 
+// A mount that failed must say so, and must not be cached: the next reload has
+// to be able to retry rather than inherit the failure forever.
+let noticeComponent
+const failingCtx = Object.assign({}, fakeCtx, {
+  slots: { inject: (key, callback) => { callback() }, register: (options, component) => { noticeComponent = component; return () => {} } },
+  remote: { $mount: async () => { throw new Error('client api: contribution repeats direct method markdownDocs/write') } },
+})
+// The client half caches its mount in its own global, which is the sandbox.
+const previousMount = sandbox.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
+vm.runInContext('delete globalThis.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__', sandbox)
+await pluginObject.apply(failingCtx)
+check('a failed mount offers a body that explains itself', typeof noticeComponent === 'function')
+check('a failed mount is not cached for later reloads', vm.runInContext('globalThis.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined', sandbox) === true)
+sandbox.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = previousMount
+
 console.log('\nclient contribution')
 check('a contribution was mounted', contribution !== undefined)
 check('contribution package is unique to this plugin', contribution?.package === NAME, String(contribution?.package))

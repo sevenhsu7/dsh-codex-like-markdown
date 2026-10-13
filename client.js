@@ -55,6 +55,7 @@ window.__ModuleLoader__.load({
 			'status.saved': 'Saved',
 			'status.stale': 'The file changed on disk',
 			'save.unavailable': 'Not connected to the file writer yet',
+			'start.failed': 'The Markdown editor could not start: ',
 			'action.save': 'Save',
 			'action.revert': 'Revert',
 			'action.overwrite': 'Overwrite',
@@ -95,6 +96,7 @@ window.__ModuleLoader__.load({
 			'status.saved': '已保存',
 			'status.stale': '文件已在磁盘上被修改',
 			'save.unavailable': '尚未连接到文件写入通道',
+			'start.failed': 'Markdown 编辑器启动失败：',
 			'action.save': '保存',
 			'action.revert': '撤销修改',
 			'action.overwrite': '仍然覆盖',
@@ -209,6 +211,7 @@ window.__ModuleLoader__.load({
 			'.' + P + '-addrow{padding:6px 6px 0}',
 			'.' + P + '-input{flex:1 1 auto;min-height:0;width:100%;box-sizing:border-box;resize:none;border:0;outline:none;background:transparent;color:inherit;padding:12px 14px;font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:13px;line-height:1.6;tab-size:2;white-space:pre;overflow:auto}',
 			'.' + P + '-input::placeholder{color:var(--dsw-alias-state-idle-primary)}',
+			'.' + P + '-notice{padding:12px 14px;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);word-break:break-word}',
 			'.' + P + '-seltools{position:absolute;z-index:5;display:flex;gap:2px;padding:3px;border-radius:8px;background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-1));border:1px solid var(--dsw-alias-border-l1);box-shadow:0 6px 20px rgba(0,0,0,.16);transform:translate(-50%,calc(-100% - 8px))}',
 			'.' + P + '-selbutton{appearance:none;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:20px;padding:1px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}',
 			'.' + P + '-selbutton:hover{background:var(--dsw-alias-bg-layer-2)}',
@@ -1335,6 +1338,25 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * A document body that explains why editing is unavailable.
+		 *
+		 * The pane is worth offering only when the writer namespace mounted, and a
+		 * mount that failed must say so rather than leave the built-in viewer's
+		 * return looking like the plugin was never there.
+		 * @param message - what the mount reported.
+		 * @param t - translation for the surrounding sentence.
+		 * @returns a body component.
+		 */
+		function createNoticeBody(message, t) {
+			return function MarkdownEditorNotice() {
+				return h('div', { className: P + '-notice' }, [
+					h('style', { key: 'style' }, CSS),
+					h('span', { key: 'text' }, t('start.failed') + message),
+				])
+			}
+		}
+
+		/**
 		 * The editor: a rendered document that edits in place, a raw source
 		 * view, and the save machinery both share.
 		 * @param props - composed document body props.
@@ -1738,13 +1760,30 @@ window.__ModuleLoader__.load({
 			// the namespace alive across reloads.
 			const mounts = globalThis
 			if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined) {
-				mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = ctx.remote.$mount(CONTRIBUTION).catch((error) => {
+				const attempt = ctx.remote.$mount(CONTRIBUTION).then(() => undefined, (error) => {
+					// Only "already mounted" is terminal. A failure must not be
+					// cached, or every later reload would inherit it.
 					if (String(messageOf(error)).indexOf('already registered') >= 0) return undefined
-					mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = undefined
+					if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === attempt) mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = undefined
 					throw error
 				})
+				mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = attempt
 			}
-			await mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
+			let mountError
+			try {
+				await mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
+			} catch (error) {
+				mountError = messageOf(error)
+			}
+			if (mountError !== undefined) {
+				console.warn('markdown-editor: the writer namespace did not mount', mountError)
+				ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
+					name: 'sidebar.right.tab.document',
+					key: IMPLEMENTATION_ID,
+					locale: LOCALE_NS,
+				}, createNoticeBody(mountError, t)))
+				return
+			}
 
 			// A namespace is a `remote.<namespace>` child Service, readable only
 			// from a context that injects it. Mounting comes first and the body is

@@ -989,9 +989,18 @@ window.__ModuleLoader__.load({
 			 * Measure the current selection when it is a non-empty one inside
 			 * this document, so the action bar can sit where the user selected.
 			 */
+			/** Cancel a press that turned out to be the start of a selection. */
+			const cancelPress = () => {
+				const press = pressRef.current
+				if (press === null || press === undefined) return
+				if (press.timer !== undefined) clearTimeout(press.timer)
+				pressRef.current = null
+			}
+
 			const readSelection = () => {
 				const container = bodyRef.current
 				const view = typeof window.getSelection === 'function' ? window.getSelection() : null
+				if (view !== null && view.isCollapsed === false) cancelPress()
 				if (container === null || view === null || view.rangeCount === 0 || view.isCollapsed === true) {
 					setSelected(null)
 					return
@@ -1190,31 +1199,32 @@ window.__ModuleLoader__.load({
 							if (event.target.closest('.' + P + '-cell') !== null) return
 						}
 						if (isEditing) return
-						// A table cell opens on the press itself. Waiting for the
-						// release made cells depend on that release landing in the
-						// same place with nothing selected, which is not what a click
-						// on a cell is guaranteed to do.
+						// A cell opens on the press — proven to work there — and the
+						// press is NOT prevented: preventing it is what made table text
+						// unselectable. A drag therefore keeps selecting while the cell
+						// editor is open over it, which is exactly what quoting needs.
 						const hit = tableCellHit(event.target, event.currentTarget)
 						if (hit !== undefined) {
-							event.preventDefault()
 							openCell(block, event, hit)
 							return
 						}
-						// Anything else is not consumed here: the press may be the
-						// start of a selection, which has to stay available for
-						// quoting, so the release decides between click and drag.
-						pressRef.current = { x: event.clientX, y: event.clientY, blockStart: block.start }
+						// Prose is not consumed: the press may be the start of a
+						// selection, so the release decides between click and drag.
+						pressRef.current = { x: event.clientX, y: event.clientY, blockStart: block.start, target: event.target }
 					},
 					onMouseUp: (event) => {
 						const press = pressRef.current
+						if (press === null || press === undefined || press.blockStart !== block.start) return
 						pressRef.current = null
-						// Compare the block's own range, not the object: a re-render
-						// between press and release rebuilds the array.
-						if (press === null || press.blockStart !== block.start) return
 						// A drag selected text; a still press is a click to edit.
 						if (Math.abs(event.clientX - press.x) > 4 || Math.abs(event.clientY - press.y) > 4) return
 						const view = typeof window.getSelection === 'function' ? window.getSelection() : null
 						if (view !== null && view.isCollapsed === false) return
+						const hit = tableCellHit(press.target, event.currentTarget)
+						if (hit !== undefined) {
+							openCell(block, event, hit)
+							return
+						}
 						beginEdit(block, event)
 					},
 				}, isEditing

@@ -1318,7 +1318,7 @@ window.__ModuleLoader__.load({
 		 * @param t - the plugin's bound translator.
 		 * @returns the body component the document slot renders.
 		 */
-		function createBody(ctx, t) {
+		function createBody(writer, t) {
 			return function MarkdownEditorBody(props) {
 				const info = typeof props.useTabInfo === 'function' ? props.useTabInfo() : undefined
 				const tab = info !== undefined && info !== null ? info.tab : undefined
@@ -1327,7 +1327,7 @@ window.__ModuleLoader__.load({
 				return h(Editor, Object.assign({}, props, {
 					key: tab !== undefined && tab !== null ? tab.id : 'markdown-editor',
 					tabId: tab !== undefined && tab !== null ? tab.id : 'markdown-editor',
-					ctx,
+					writer,
 					t,
 					drafts,
 				}))
@@ -1341,7 +1341,7 @@ window.__ModuleLoader__.load({
 		 * @returns the editor view.
 		 */
 		function Editor(props) {
-			const { resourceAddress, content, scrollportRef, useResource, ctx, t, drafts, tabId } = props
+			const { resourceAddress, content, scrollportRef, useResource, writer, t, drafts, tabId } = props
 			const meta = typeof useResource === 'function' ? useResource(resourceAddress) : undefined
 			const absolutePath = meta !== undefined && meta !== null && meta.value !== undefined ? meta.value.absolutePath : undefined
 			const diskVersion = meta !== undefined && meta !== null && meta.value !== undefined ? meta.value.version : undefined
@@ -1389,8 +1389,7 @@ window.__ModuleLoader__.load({
 				if (current === null || current.saving) return
 				const text = typeof opts.text === 'string' ? opts.text : current.state.text
 				const expectedVersion = opts.force === true ? undefined : current.state.baseVersion
-				const writer = writerNamespace(ctx)
-				if (writer === undefined || typeof writer.write !== 'function') {
+				if (writer === undefined || writer === null || typeof writer.write !== 'function') {
 					setNotice({ kind: 'error', message: t('save.unavailable') })
 					setState((prev) => Object.assign({}, prev, { hold: true }))
 					return
@@ -1433,7 +1432,7 @@ window.__ModuleLoader__.load({
 				}
 				setState((prev) => Object.assign({}, prev, { hold: true }))
 				setNotice({ kind: 'error', message: value.message !== undefined ? value.message : 'save failed (' + String(value.status) + ')' })
-			}, [ctx])
+			}, [writer])
 
 			// Auto-save: write the buffer once editing pauses. Off means the user
 			// saves explicitly, with ⌘S or the toolbar.
@@ -1669,22 +1668,6 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * The mounted writer namespace, or `undefined` while it is not there.
-		 *
-		 * A Remote namespace is a `remote.<namespace>` child Service, and Cordis
-		 * refuses a plain property read of it unless the reader injects it. This
-		 * plugin is the side that creates it — `$mount` runs in `apply` — so
-		 * injecting it would be an edge onto a service this plugin is still
-		 * creating. `ctx.get` reads a service without the inject requirement.
-		 * @param ctx - the plugin's context.
-		 * @returns the namespace service, or `undefined`.
-		 */
-		function writerNamespace(ctx) {
-			if (ctx === undefined || ctx === null || typeof ctx.get !== 'function') return undefined
-			return ctx.get('remote.' + NAMESPACE)
-		}
-
-		/**
 		 * Split a document resource address into the Session and path it carries.
 		 *
 		 * The address grammar is `dsh-resource://file/session/<sessionId>/<path>`,
@@ -1729,7 +1712,7 @@ window.__ModuleLoader__.load({
 		 * contribution.
 		 * @param ctx - the plugin's Client Cordis context.
 		 */
-		function apply(ctx) {
+		async function apply(ctx) {
 			let translate = (key) => (EN[key] !== undefined ? EN[key] : key)
 			try {
 				ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh: ZH, en: EN }), 'markdown-editor: locale')
@@ -1750,12 +1733,6 @@ window.__ModuleLoader__.load({
 				wrap: false,
 			}), 'markdown-editor: metadata')
 
-			ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
-				name: 'sidebar.right.tab.document',
-				key: IMPLEMENTATION_ID,
-				locale: LOCALE_NS,
-			}, createBody(ctx, t)))
-
 			// The contribution is owned by the Remote service, so an HMR reload of
 			// this bundle must not mount it twice; one process-wide promise keeps
 			// the namespace alive across reloads.
@@ -1767,7 +1744,20 @@ window.__ModuleLoader__.load({
 					throw error
 				})
 			}
-			void mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
+			await mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
+
+			// A namespace is a `remote.<namespace>` child Service, readable only
+			// from a context that injects it. Mounting comes first and the body is
+			// registered inside that injected context, which is how the shipped
+			// client consumes its own namespaces; without the mount there is no
+			// writer, so there is no body to offer an editing pane that cannot save.
+			ctx.inject(['remote.' + NAMESPACE, 'slots', 'documentPreviews', 'locale'], (bodyCtx) => {
+				bodyCtx.slots.inject('sidebar.right.tab.document', () => bodyCtx.slots.register({
+					name: 'sidebar.right.tab.document',
+					key: IMPLEMENTATION_ID,
+					locale: LOCALE_NS,
+				}, createBody(bodyCtx.remote[NAMESPACE], t)))
+			})
 		}
 
 		return { inject, apply }

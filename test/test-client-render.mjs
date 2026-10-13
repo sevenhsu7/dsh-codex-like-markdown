@@ -27,7 +27,7 @@ function check(label, ok, detail) {
   console.log('  FAIL ' + label + (detail === undefined ? '' : ' — ' + detail))
 }
 
-function loadBundle(withRenderer) {
+async function loadBundle(withRenderer) {
   const source = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   let registration
   const sandbox = {
@@ -63,8 +63,11 @@ function loadBundle(withRenderer) {
     documentPreviews: { register: () => () => {} },
     slots: { inject: (key, callback) => callback(), register: (options, component) => { Body = component; return () => {} } },
     remote: { $mount: async () => () => {} },
+    // The body registers inside the context that injects the namespace, the way
+    // the shipped client mounts its own Remote contributions.
+    inject: (deps, callback) => callback(Object.assign({}, ctx, { remote: Object.assign({ $mount: async () => () => {} }, { markdownDocs: { write: async () => ({}) } }) })),
   }
-  pluginObject.apply(ctx)
+  await pluginObject.apply(ctx)
   return { Body, dictionaries, usedKeys, pluginObject, sandbox }
 }
 
@@ -80,7 +83,7 @@ const baseProps = (overrides) => Object.assign({
   useTabInfo: () => ({ tab: { id: 'tab-1', title: 'notes.md' } }),
 }, overrides)
 
-const { Body, dictionaries, usedKeys } = loadBundle(true)
+const { Body, dictionaries, usedKeys } = await loadBundle(true)
 check('body component captured', typeof Body === 'function')
 
 function render(props) {
@@ -110,7 +113,7 @@ check('the rendered surface is labelled without a hover tooltip', html.includes(
 check('save is disabled until the buffer is dirty', /<button[^>]*disabled[^>]*>action\.save/.test(html))
 
 console.log('\nmode fallback')
-const fallback = loadBundle(false)
+const fallback = await loadBundle(false)
 const fallbackHtml = ReactDOMServer.renderToStaticMarkup(React.createElement(fallback.Body, baseProps()))
 check('without the renderer a source editor still renders', fallbackHtml.includes('<textarea') && fallbackHtml.includes('dshMdEditor-input'))
 check('without the renderer the live view is not offered', fallbackHtml.includes('>mode.live<') === false)

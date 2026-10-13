@@ -980,7 +980,6 @@ window.__ModuleLoader__.load({
 			const cellRef = React.useRef(null)
 			const closeCellRef = React.useRef(() => {})
 			const bodyRef = React.useRef(null)
-			const pressRef = React.useRef(null)
 			const noteTimer = React.useRef(null)
 			editingRef.current = editing
 			cellRef.current = cell
@@ -989,18 +988,9 @@ window.__ModuleLoader__.load({
 			 * Measure the current selection when it is a non-empty one inside
 			 * this document, so the action bar can sit where the user selected.
 			 */
-			/** Cancel a press that turned out to be the start of a selection. */
-			const cancelPress = () => {
-				const press = pressRef.current
-				if (press === null || press === undefined) return
-				if (press.timer !== undefined) clearTimeout(press.timer)
-				pressRef.current = null
-			}
-
 			const readSelection = () => {
 				const container = bodyRef.current
 				const view = typeof window.getSelection === 'function' ? window.getSelection() : null
-				if (view !== null && view.isCollapsed === false) cancelPress()
 				if (container === null || view === null || view.rangeCount === 0 || view.isCollapsed === true) {
 					setSelected(null)
 					return
@@ -1192,35 +1182,25 @@ window.__ModuleLoader__.load({
 					className: P + '-block',
 					'data-block': index,
 					'data-editing': isEditing ? 'true' : isCell ? 'cell' : undefined,
-					onMouseDown: (event) => {
+					// One handler, and the browser's own event: `click` fires only after a
+					// press and a release without a drag, which is exactly the
+					// distinction this needs. Rebuilding that distinction from
+					// mousedown/mouseup bookkeeping is what made a click do nothing
+					// whenever a re-render, a few pixels of movement, or a leftover
+					// selection got in the way -- and preventing the press's default,
+					// the other way to force it, stopped table text being selectable.
+					onClick: (event) => {
 						if (event.target !== null && typeof event.target.closest === 'function') {
 							if (event.target.closest('a') !== null) return
 							// Clicks inside the open cell surface belong to it.
 							if (event.target.closest('.' + P + '-cell') !== null) return
 						}
 						if (isEditing) return
-						// A cell opens on the press — proven to work there — and the
-						// press is NOT prevented: preventing it is what made table text
-						// unselectable. A drag therefore keeps selecting while the cell
-						// editor is open over it, which is exactly what quoting needs.
-						const hit = tableCellHit(event.target, event.currentTarget)
-						if (hit !== undefined) {
-							openCell(block, event, hit)
-							return
-						}
-						// Prose is not consumed: the press may be the start of a
-						// selection, so the release decides between click and drag.
-						pressRef.current = { x: event.clientX, y: event.clientY, blockStart: block.start, target: event.target }
-					},
-					onMouseUp: (event) => {
-						const press = pressRef.current
-						if (press === null || press === undefined || press.blockStart !== block.start) return
-						pressRef.current = null
-						// A drag selected text; a still press is a click to edit.
-						if (Math.abs(event.clientX - press.x) > 4 || Math.abs(event.clientY - press.y) > 4) return
+						// A drag selected text; that selection is what the user wants, so
+						// the click that ends it must not turn into an edit.
 						const view = typeof window.getSelection === 'function' ? window.getSelection() : null
 						if (view !== null && view.isCollapsed === false) return
-						const hit = tableCellHit(press.target, event.currentTarget)
+						const hit = tableCellHit(event.target, event.currentTarget)
 						if (hit !== undefined) {
 							openCell(block, event, hit)
 							return

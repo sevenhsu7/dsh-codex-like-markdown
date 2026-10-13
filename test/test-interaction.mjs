@@ -402,10 +402,12 @@ const toggleSourceView = () => {
   pressWindowKey('e', { metaKey: true, altKey: true })
 }
 
-/** A click is a press and a release in the same place. */
+/**
+ * A click is what the browser sends after a press and a release without a drag,
+ * which is the only event the blocks listen to now.
+ */
 const press = (element, event) => {
-  element.props.onMouseDown(event)
-  element.props.onMouseUp(event)
+  element.props.onClick(event)
 }
 
 const frame = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -865,18 +867,19 @@ check('quoting does not change the document', blocks().length === 3, String(bloc
 check('the bar closes once it has been sent', find(tree, byClass('dshMdEditor-seltools')) === undefined)
 check('the composer is told the text was added', find(tree, byClass('dshMdEditor-selnote')).props.children === 'selection.added', String(find(tree, byClass('dshMdEditor-selnote')).props.children))
 
-console.log('\na press selects and a drag edits nothing')
-sandbox.window.getSelection = () => ({ rangeCount: 0, isCollapsed: true, toString: () => '', removeAllRanges: () => {}, addRange: () => {} })
+console.log('\na click edits and a selection does not')
 const plainTarget = { closest: () => null }
 const plainBase = { firstElementChild: null, contains: () => true }
-const dragBlock = () => blocks()[1]
-dragBlock().props.onMouseDown({ clientX: 10, clientY: 10, target: plainTarget, currentTarget: plainBase, preventDefault() {} })
-dragBlock().props.onMouseUp({ clientX: 90, clientY: 12, target: plainTarget, currentTarget: plainBase, preventDefault() {} })
+const stillSelection = () => ({ rangeCount: 0, isCollapsed: true, toString: () => '', removeAllRanges: () => {}, addRange: () => {} })
+const dragSelection = () => ({ rangeCount: 1, isCollapsed: false, toString: () => 'selected words', removeAllRanges: () => {}, addRange: () => {}, getRangeAt: () => ({ commonAncestorContainer: {}, startContainer: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 10, height: 10 }) }) })
+sandbox.window.getSelection = dragSelection
+press(blocks()[1], { clientX: 10, clientY: 10, target: plainTarget, currentTarget: plainBase })
 await flush()
-check('a drag across text does not open an editor', find(tree, byClass('dshMdEditor-rich')) === undefined)
-press(dragBlock(), { clientX: 10, clientY: 10, target: plainTarget, currentTarget: plainBase, preventDefault() {} })
+check('a click that ended a drag does not open an editor', find(tree, byClass('dshMdEditor-rich')) === undefined)
+sandbox.window.getSelection = stillSelection
+press(blocks()[1], { clientX: 10, clientY: 10, target: plainTarget, currentTarget: plainBase })
 await flush()
-check('a still click still opens the editor', find(tree, byClass('dshMdEditor-rich')) !== undefined)
+check('a click opens the editor', find(tree, byClass('dshMdEditor-rich')) !== undefined)
 find(tree, byClass('dshMdEditor-rich')).props.onKeyDown({ key: 'Escape', preventDefault() {} })
 await flush()
 

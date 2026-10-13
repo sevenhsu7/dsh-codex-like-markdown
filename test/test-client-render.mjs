@@ -100,7 +100,8 @@ try {
 // asserts the empty state. Block rendering is covered by the interaction suite.
 check('an unloaded buffer shows the empty state, not a raw textarea', html.includes('block.empty') && html.includes('<textarea') === false)
 check('the empty state is labelled without a hover tooltip', html.includes('aria-label="block.hint"') && html.includes('title="block.hint"') === false)
-check('offers the live and source views', html.includes('>mode.live<') && html.includes('>mode.source<'))
+check('the toolbar is one row, with no view toggle', html.includes('dshMdEditor-bar"') && html.includes('dshMdEditor-bar2') === false)
+check('the raw view left the toolbar', html.includes('>mode.source<') === false && html.includes('>mode.live<') === false)
 check('offers save / revert / auto-save', html.includes('action.save') && html.includes('action.revert') && html.includes('action.autoSave'))
 check('offers formatting actions', html.includes('format.bold') && html.includes('format.italic') && html.includes('format.code') && html.includes('format.link'))
 check('styles are scoped to the plugin prefix', html.includes('.dshMdEditor-root'))

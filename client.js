@@ -54,6 +54,7 @@ window.__ModuleLoader__.load({
 			'status.saving': 'Saving…',
 			'status.saved': 'Saved',
 			'status.stale': 'The file changed on disk',
+			'save.unavailable': 'Not connected to the file writer yet',
 			'action.save': 'Save',
 			'action.revert': 'Revert',
 			'action.overwrite': 'Overwrite',
@@ -93,6 +94,7 @@ window.__ModuleLoader__.load({
 			'status.saving': '保存中…',
 			'status.saved': '已保存',
 			'status.stale': '文件已在磁盘上被修改',
+			'save.unavailable': '尚未连接到文件写入通道',
 			'action.save': '保存',
 			'action.revert': '撤销修改',
 			'action.overwrite': '仍然覆盖',
@@ -163,7 +165,6 @@ window.__ModuleLoader__.load({
 		const CSS = [
 			'.' + P + '-root{display:flex;flex-direction:column;height:100%;min-height:0;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}',
 			'.' + P + '-bar{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-width:0;padding:5px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary)}',
-			'.' + P + '-bar2{display:flex;align-items:center;gap:2px;flex:0 0 auto;min-width:0;padding:3px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary)}',
 			'.' + P + '-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--dsw-alias-state-idle-primary)}',
 			'.' + P + '-dot[data-state="dirty"]{background:var(--dsw-alias-state-warn-primary)}',
 			'.' + P + '-dot[data-state="saved"]{background:var(--dsw-alias-state-success-primary)}',
@@ -176,8 +177,6 @@ window.__ModuleLoader__.load({
 			'.' + P + '-button:disabled{opacity:.4;cursor:default}',
 			'.' + P + '-button[aria-pressed="true"]{color:var(--dsw-alias-brand-primary)}',
 			'.' + P + '-icon{font-weight:600;min-width:22px;text-align:center;padding:1px 4px}',
-			'.' + P + '-seg{display:flex;align-items:center;gap:1px;padding:1px;border-radius:7px;background:var(--dsw-alias-bg-layer-2)}',
-			'.' + P + '-seg .' + P + '-button[aria-pressed="true"]{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}',
 			'.' + P + '-primary{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}',
 			'.' + P + '-blocks{position:relative;flex:1 1 auto;min-height:0;overflow:auto;padding:2px 6px 24px}',
 			'.' + P + '-block{position:relative;border-radius:6px;padding:1px 6px;cursor:text}',
@@ -1390,11 +1389,17 @@ window.__ModuleLoader__.load({
 				if (current === null || current.saving) return
 				const text = typeof opts.text === 'string' ? opts.text : current.state.text
 				const expectedVersion = opts.force === true ? undefined : current.state.baseVersion
+				const writer = writerNamespace(ctx)
+				if (writer === undefined || typeof writer.write !== 'function') {
+					setNotice({ kind: 'error', message: t('save.unavailable') })
+					setState((prev) => Object.assign({}, prev, { hold: true }))
+					return
+				}
 				setSaving(true)
 				setNotice(null)
 				let result
 				try {
-					result = await ctx.remote[NAMESPACE].write({
+					result = await writer.write({
 						sessionId: current.address.sessionId,
 						path: current.address.path,
 						absolutePath: current.absolutePath,
@@ -1461,6 +1466,25 @@ window.__ModuleLoader__.load({
 				window.addEventListener('keydown', onKeyDown, true)
 				return () => window.removeEventListener('keydown', onKeyDown, true)
 			}, [save])
+
+			// The raw document is still one keystroke away, but it no longer owns a
+			// row: ⌥⌘E swaps the rendered view for the source and back, gated on
+			// focus the way the save shortcut is.
+			React.useEffect(() => {
+				if (MarkdownText === null) return undefined
+				const onKeyDown = (event) => {
+					if (!(event.metaKey || event.ctrlKey) || !event.altKey) return
+					if (String(event.key).toLowerCase() !== 'e') return
+					const active = document.activeElement
+					if (active === null) return
+					if (active !== inputRef.current && String(active.className).indexOf(P + '-') !== 0) return
+					event.preventDefault()
+					event.stopPropagation()
+					setMode((prev) => (prev === 'source' ? 'live' : 'source'))
+				}
+				window.addEventListener('keydown', onKeyDown, true)
+				return () => window.removeEventListener('keydown', onKeyDown, true)
+			}, [])
 
 			const dirty = state.text !== state.savedText
 			// The resource's version moving past the one this buffer is based on is
@@ -1602,7 +1626,14 @@ window.__ModuleLoader__.load({
 				h('div', { className: P + '-bar', key: 'bar' }, [
 					h('span', { className: P + '-dot', key: 'dot', 'data-state': status.kind }),
 					h('span', { className: P + '-label', key: 'label', title: absolutePath === undefined ? undefined : absolutePath }, status.text),
-					h('span', { className: P + '-spacer', key: 'spacer' }),
+					h('span', { className: P + '-spacer', key: 'spacer-before' }),
+					// The formatting actions sit between the status and the saving
+					// controls, so one row carries everything the pane needs.
+					icon('bold', t('format.bold'), 'B', () => wrapSelection('**', '**')),
+					icon('italic', t('format.italic'), 'I', () => wrapSelection('*', '*')),
+					icon('code', t('format.code'), '</>', () => wrapSelection('`', '`')),
+					icon('link', t('format.link'), '🔗', () => wrapSelection('[', '](url)')),
+					h('span', { className: P + '-spacer', key: 'spacer-after' }),
 					changedOnDisk
 						? h('button', { key: 'overwrite', type: 'button', className: P + '-button', onClick: () => void save({ force: true }) }, t('action.overwrite'))
 						: null,
@@ -1633,31 +1664,24 @@ window.__ModuleLoader__.load({
 						onClick: () => void save({}),
 					}, t('action.save')),
 				]),
-				h('div', { className: P + '-bar2', key: 'bar2' }, [
-					h('div', { className: P + '-seg', key: 'modes', role: 'group', 'aria-label': t('mode.aria') }, [
-						MarkdownText === null ? null : h('button', {
-							key: 'live',
-							type: 'button',
-							className: P + '-button',
-							'aria-pressed': mode === 'live' ? 'true' : 'false',
-							onClick: () => setMode('live'),
-						}, t('mode.live')),
-						h('button', {
-							key: 'source',
-							type: 'button',
-							className: P + '-button',
-							'aria-pressed': mode === 'source' ? 'true' : 'false',
-							onClick: () => setMode('source'),
-						}, t('mode.source')),
-					]),
-					h('span', { className: P + '-spacer', key: 'spacer' }),
-					icon('bold', t('format.bold'), 'B', () => wrapSelection('**', '**')),
-					icon('italic', t('format.italic'), 'I', () => wrapSelection('*', '*')),
-					icon('code', t('format.code'), '</>', () => wrapSelection('`', '`')),
-					icon('link', t('format.link'), '🔗', () => wrapSelection('[', '](url)')),
-				]),
 				body,
 			])
+		}
+
+		/**
+		 * The mounted writer namespace, or `undefined` while it is not there.
+		 *
+		 * A Remote namespace is a `remote.<namespace>` child Service, and Cordis
+		 * refuses a plain property read of it unless the reader injects it. This
+		 * plugin is the side that creates it — `$mount` runs in `apply` — so
+		 * injecting it would be an edge onto a service this plugin is still
+		 * creating. `ctx.get` reads a service without the inject requirement.
+		 * @param ctx - the plugin's context.
+		 * @returns the namespace service, or `undefined`.
+		 */
+		function writerNamespace(ctx) {
+			if (ctx === undefined || ctx === null || typeof ctx.get !== 'function') return undefined
+			return ctx.get('remote.' + NAMESPACE)
 		}
 
 		/**

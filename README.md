@@ -31,9 +31,9 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 | 表格 | 表格保持渲染器自己的表格；点某一格只在**那一格**上浮出编辑面，也只回写那一格 |
 | 引用到会话 | 在预览里选中一段文字，浮出的操作条可以把选中的文字**添加至会话**：作为带出处的引用插进输入框（界面语言是中文时按钮就叫「添加至会话」） |
 | 新增 | **+ 新增段落** 追加一个段落并打开它 |
-| 格式化 | **B** / *I* / `</>` / 🔗 给当前选区套上对应的 Markdown |
+| 工具栏 | 只有一行：状态提示 · **B** / *I* / `</>` / 🔗 · 保存相关按钮 |
 | `⌘S` / `Ctrl+S` | 立即保存 |
-| 源码视图 | **源码** 开关把整个面板切成原始文档 |
+| 原始文档 | `⌥⌘E` 在渲染视图与原始 Markdown 之间切换（也可以把渲染器下拉切到内置 **Text** 只读查看原文） |
 | 文件在别处被改 | 未保存的内容**不会被覆盖**，工具栏给出 *仍然覆盖* 或 *从磁盘重新载入*；在你再次编辑前暂停自动保存 |
 | 只读渲染视图 | 仍然可用：预览的渲染器下拉里可以选回内置的 **Markdown** |
 | 草稿 | 每个标签页的未保存内容，在切换标签、切换渲染器、切到源码再切回来时都不丢 |
@@ -126,9 +126,9 @@ itself, as its own Remote namespace, and adds a renderer that uses it.
 | Tables | The table keeps the renderer's own table; clicking a cell opens an editor over **just that cell**, and only that cell is written back |
 | Quote to chat | Select a passage in the preview and the bar adds it to the composer as a quote with its source (in a Chinese UI the action reads 添加至会话) |
 | Adding | **+ Add paragraph** appends a paragraph and opens it |
-| Formatting | **B** / *I* / `</>` / 🔗 insert the Markdown around the selection |
+| Toolbar | One row: the status · **B** / *I* / `</>` / 🔗 · the saving controls |
 | `⌘S` / `Ctrl+S` | Saves immediately |
-| Source view | The **Source** toggle switches the whole pane to the raw document |
+| Raw document | `⌥⌘E` swaps the rendered view for the raw Markdown and back (the renderer dropdown's built-in **Text** viewer reads it, read-only) |
 | File changed elsewhere | The dirty buffer is **kept**, and the toolbar offers *Overwrite* or *Load from disk*; auto-save pauses until you edit again |
 | Read-only rendered view | Still available: the preview's renderer dropdown lists the built-in **Markdown** viewer |
 | Drafts | A tab's unsaved text survives switching tabs, switching renderers, and going to the source view and back |

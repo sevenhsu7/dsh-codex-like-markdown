@@ -165,14 +165,14 @@ const sandbox = {
     activeElement: null,
     baseURI: 'http://127.0.0.1:19387/',
     createRange: () => ({ selectNodeContents: () => {}, collapse: () => {}, startContainer: null, startOffset: 0 }),
-    addEventListener: (type, listener) => { documentListeners.set(type, listener) },
-    removeEventListener: (type) => { documentListeners.delete(type) },
+    addEventListener: (type, listener) => { const list = documentListeners.get(type) ?? []; list.push(listener); documentListeners.set(type, list) },
+    removeEventListener: (type, listener) => { const list = documentListeners.get(type) ?? []; documentListeners.set(type, list.filter((one) => one !== listener)) },
   },
   NodeFilter: { SHOW_TEXT: 4 },
   window: {
     __ModuleLoader__: { load: (definition) => { registration = definition } },
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (type, listener) => { const list = windowListeners.get(type) ?? []; list.push(listener); windowListeners.set(type, list) },
+    removeEventListener: (type, listener) => { const list = windowListeners.get(type) ?? []; windowListeners.set(type, list.filter((one) => one !== listener)) },
     requestAnimationFrame: (fn) => fn(),
     cancelAnimationFrame: () => {},
     getSelection: () => ({ removeAllRanges: () => {}, addRange: () => {}, toString: () => '' }),
@@ -200,15 +200,24 @@ const pluginObject = registration.factory((specifier) => {
 
 const writeCalls = []
 let writeImpl = async () => ({ ok: true, value: { status: 'saved', version: 'v2', bytes: 4 } })
-const remote = {
-  $mount: async () => () => {},
-  markdownDocs: {
-    write: async (payload) => {
-      writeCalls.push(payload)
-      return writeImpl(payload)
-    },
+const writer = {
+  write: async (payload) => {
+    writeCalls.push(payload)
+    return writeImpl(payload)
   },
 }
+/** The writer namespace, as the mount installs it: a `remote.markdownDocs` child Service. */
+let writerMounted = true
+const mounted = { $mount: async () => () => {} }
+// Cordis refuses `remote.<namespace>` as a plain property read without an
+// injection edge, and the plugin cannot have that edge — it is the side
+// creating the namespace. This proxy is that refusal, so the mistake is loud.
+const remote = new Proxy(mounted, {
+  get: (target, prop) => {
+    if (typeof prop !== 'string' || prop in target || prop === 'then' || prop.startsWith('_')) return target[prop]
+    throw new Error('cannot get property "remote.' + prop + '" without inject')
+  },
+})
 
 let Component
 const ctx = {
@@ -217,6 +226,7 @@ const ctx = {
   documentPreviews: { register: () => () => {} },
   slots: { inject: (key, callback) => callback(), register: (options, component) => { Component = component; return () => {} } },
   remote,
+  get: (name) => (name === 'remote.markdownDocs' && writerMounted ? writer : undefined),
 }
 pluginObject.apply(ctx)
 
@@ -374,6 +384,24 @@ const changeEvent = (value) => ({ target: { value, style: {}, scrollHeight: 20 }
 /** Document-level listeners the component registered, by event type. */
 const documentListeners = new Map()
 
+/** Window-level listeners the component registered, by event type. */
+const windowListeners = new Map()
+
+/** Press a keyboard shortcut on the window, as the shell would. */
+const pressWindowKey = (key, modifiers = {}) => {
+  const event = Object.assign({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, preventDefault() {}, stopPropagation() {} }, modifiers)
+  for (const listener of windowListeners.get('keydown') ?? []) listener(event)
+}
+/** Focus the editor the way clicking it does, so focus-gated shortcuts apply. */
+const focusEditor = () => {
+  sandbox.document.activeElement = { className: 'dshMdEditor-root', nodeName: 'DIV' }
+}
+/** Swap the rendered view for the raw source, the way the shortcut does. */
+const toggleSourceView = () => {
+  focusEditor()
+  pressWindowKey('e', { metaKey: true, altKey: true })
+}
+
 /** A click is a press and a release in the same place. */
 const press = (element, event) => {
   element.props.onMouseDown(event)
@@ -408,7 +436,9 @@ await flush()
 check('adopts the file into the document', blocks().length === 3, String(blocks().length))
 check('renders each section through the markdown renderer', renderedBlocks().length === 3, String(renderedBlocks().length))
 check('renders the source text of every block', renderedBlocks().map((node) => node.props.children).join('|') === '# Title|first paragraph|## Section', renderedBlocks().map((node) => node.props.children).join('|'))
-check('offers both views with live selected', buttonWithText('mode.live').props['aria-pressed'] === 'true' && buttonWithText('mode.source').props['aria-pressed'] === 'false')
+check('the toolbar is a single row of status, formatting, and saving', findAll(tree, byClass('dshMdEditor-bar')).length === 1 && findAll(tree, byClass('dshMdEditor-bar2')).length === 0, String(findAll(tree, byClass('dshMdEditor-bar')).length))
+check('the formatting actions sit in that row', ['format.bold', 'format.italic', 'format.code', 'format.link'].every((label) => buttonWithLabel(label) !== undefined))
+focusEditor()
 check('a clean document disables save', saveButton().props.disabled === true)
 
 console.log('\nin-place editing')
@@ -467,10 +497,10 @@ sandbox.document.activeElement = null
 sandbox.window.getSelection = () => ({ removeAllRanges: () => {}, addRange: () => {}, toString: () => '' })
 
 console.log('\nsource view')
-buttonWithText('mode.source').props.onClick()
+toggleSourceView()
 await flush()
 check('the source view shows the whole document', textarea().props.value === EXPECTED, JSON.stringify(textarea()?.props.value))
-check('the source view is selected', buttonWithText('mode.source').props['aria-pressed'] === 'true')
+check('the source view is reachable by shortcut', find(tree, byClass('dshMdEditor-input')) !== undefined)
 
 console.log('\nsave')
 await saveButton().props.onClick()
@@ -489,6 +519,20 @@ await flush()
 await saveButton().props.onClick()
 await flush()
 check('the follow-up write uses the version the save returned', writeCalls[1]?.expectedVersion === 'v2', JSON.stringify(writeCalls[1]?.expectedVersion))
+
+console.log('\nthe write path when the namespace is not mounted')
+const beforeMissing = writeCalls.length
+writerMounted = false
+focusEditor()
+pressWindowKey('s', { metaKey: true })
+await flush()
+check('a save without the writer namespace reports it instead of throwing', find(tree, (node) => node !== null && node !== undefined && node.props !== undefined && node.props.children === 'save.unavailable') !== undefined)
+check('no write is attempted without the namespace', writeCalls.length === beforeMissing, String(writeCalls.length))
+writerMounted = true
+focusEditor()
+pressWindowKey('s', { metaKey: true })
+await flush()
+check('saving works again once it is mounted', writeCalls.length === beforeMissing + 1, String(writeCalls.length))
 
 console.log('\nstale file')
 writeImpl = async () => ({ ok: true, value: { status: 'stale', message: 'file changed since it was read' } })
@@ -553,7 +597,7 @@ await flush()
 check('with auto-save off nothing is written', writeCalls.length === quiet, String(writeCalls.length - quiet))
 
 console.log('\nno duplicate while a draft holds a blank line')
-buttonWithText('mode.live').props.onClick()
+toggleSourceView()
 await flush()
 press(blocks()[0], fakeEvent())
 await flush()
@@ -603,11 +647,11 @@ for (const sample of samples) {
   await flush()
   richSurface().props.onKeyDown({ key: 'Escape', preventDefault() {} })
   await flush()
-  buttonWithText('mode.source').props.onClick()
+  toggleSourceView()
   await flush()
   const text = textarea() === undefined ? 'NO-TEXTAREA' : textarea().props.value
   if (process.env.DEBUG_RT) console.log('DEBUG text=', JSON.stringify(text), 'buttons=', tree === undefined ? 'notree' : 'tree')
-  buttonWithText('mode.live').props.onClick()
+  toggleSourceView()
   await flush()
   if (text !== sample) {
     roundTripFailures += 1
@@ -650,10 +694,10 @@ check('table round-trips through the surface', (() => {
 await flush()
 richSurface().props.onKeyDown({ key: 'Escape', preventDefault() {} })
 await flush()
-buttonWithText('mode.source').props.onClick()
+toggleSourceView()
 await flush()
 check('the table text survives the round trip', textarea().props.value === tableSource, JSON.stringify(textarea().props.value))
-buttonWithText('mode.live').props.onClick()
+toggleSourceView()
 await flush()
 await saveButton().props.onClick()
 await flush()
@@ -678,10 +722,10 @@ richSurface().props.onInput({ currentTarget: parseHtml(mixedHtml) })
 await flush()
 richSurface().props.onKeyDown({ key: 'Escape', preventDefault() {} })
 await flush()
-buttonWithText('mode.source').props.onClick()
+toggleSourceView()
 await flush()
 check('a mixed block round-trips exactly', textarea().props.value === mixed, JSON.stringify(textarea().props.value))
-buttonWithText('mode.live').props.onClick()
+toggleSourceView()
 await flush()
 await saveButton().props.onClick()
 await flush()
@@ -735,10 +779,10 @@ check('no second editing surface appeared', findAll(tree, byClass('dshMdEditor-r
 
 find(tree, byClass('dshMdEditor-cell')).props.onInput({ currentTarget: domWithText('TWO') })
 await flush()
-buttonWithText('mode.source').props.onClick()
+toggleSourceView()
 await flush()
 check('only the clicked cell changed', textarea().props.value === '| A | B |\n| --- | --- |\n| one | TWO |\n| three | four |', JSON.stringify(textarea().props.value))
-buttonWithText('mode.live').props.onClick()
+toggleSourceView()
 await flush()
 check('switching views ends the in-place cell session', find(tree, byClass('dshMdEditor-cell')) === undefined)
 check('the table is still rendered after the edit', renderedBlocks().length === 1)
@@ -748,10 +792,10 @@ press(blocks()[0], { clientX: 110, clientY: 50, target: firstCell, currentTarget
 await flush()
 find(tree, byClass('dshMdEditor-cell')).props.onInput({ currentTarget: domWithText('ONE') })
 await flush()
-buttonWithText('mode.source').props.onClick()
+toggleSourceView()
 await flush()
 check('a second cell edit lands in its own cell', textarea().props.value === '| A | B |\n| --- | --- |\n| ONE | TWO |\n| three | four |', JSON.stringify(textarea().props.value))
-buttonWithText('mode.live').props.onClick()
+toggleSourceView()
 await flush()
 await saveButton().props.onClick()
 await flush()
@@ -803,7 +847,7 @@ const selectPassage = (text) => {
       getBoundingClientRect: () => ({ left: 40, top: 60, width: 120, height: 18 }),
     }),
   })
-  documentListeners.get('selectionchange')()
+  for (const listener of documentListeners.get('selectionchange') ?? []) listener()
 }
 selectPassage('first paragraph')
 await flush()

@@ -1,0 +1,52 @@
+{
+  "name": "dsh-codex-like-markdown",
+  "version": "0.1.0",
+  "description": "Codex-like Markdown editing for the DSH right Sidebar: a rendered document you edit in place, including table cells.",
+  "license": "MIT",
+  "type": "module",
+  "icon": "./icon.svg",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "markdown",
+    "wysiwyg",
+    "editor"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/test-host.mjs && node test/test-client-render.mjs && node test/test-interaction.mjs",
+    "fetch-harness": "node test/fetch.cjs @deepseek-ai/cordis @deepseek-ai/dsh-typert-registry @deepseek-ai/dsh-fs-local @deepseek-ai/dsh-api-gateway"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sevenhsu7/dsh-codex-like-markdown.git"
+  },
+  "homepage": "https://github.com/sevenhsu7/dsh-codex-like-markdown#readme",
+  "bugs": {
+    "url": "https://github.com/sevenhsu7/dsh-codex-like-markdown/issues"
+  }
+}

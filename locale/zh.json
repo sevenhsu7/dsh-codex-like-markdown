@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "可编辑的 Markdown 预览",
+    "description": "在右侧文档预览里直接编辑 Markdown 文件，支持自动保存与安全写入。"
+  }
+}

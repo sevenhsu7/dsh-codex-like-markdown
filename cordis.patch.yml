@@ -1,0 +1,3 @@
+- insert:
+    - id: markdown-editor-writer
+      name: 'dsh-codex-like-markdown'

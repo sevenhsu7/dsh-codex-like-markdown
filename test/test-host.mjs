@@ -175,11 +175,6 @@ let definition
 let slotRegistration
 let contribution
 let styleCount = 0
-let injectCalls = []
-/** A client Remote: a namespace is a `remote.<namespace>` child Service. */
-const makeRemote = (namespaces) => Object.assign({
-  $mount: async (value) => { contribution = value; return () => {} },
-}, namespaces)
 const fakeCtx = {
   effect: (fn) => { const disposer = fn(); return typeof disposer === 'function' ? disposer : () => {} },
   locale: { register: () => () => {}, bind: () => (key) => key },
@@ -188,13 +183,9 @@ const fakeCtx = {
     inject: (key, callback) => { callback() },
     register: (options, component) => { slotRegistration = { options, component }; styleCount += 1; return () => {} },
   },
-  remote: makeRemote({}),
-  inject: (deps, callback) => {
-    injectCalls.push(deps)
-    return callback(Object.assign({}, fakeCtx, { remote: makeRemote({ markdownDocs: { write: async () => ({}) } }) }))
-  },
+  remote: { $mount: async (value) => { contribution = value; return () => {} } },
 }
-await pluginObject.apply(fakeCtx)
+pluginObject.apply(fakeCtx)
 
 check('registers a document implementation', definition !== undefined)
 check('implementation id is package-scoped', definition?.id === NAME + '/markdown-editor', String(definition?.id))
@@ -204,34 +195,6 @@ check('loads complete bytes so edits are never partial', definition?.loading ===
 check('body slot key equals the implementation id', slotRegistration?.options?.key === definition?.id, String(slotRegistration?.options?.key))
 check('body is registered under the document body slot', slotRegistration?.options?.name === 'sidebar.right.tab.document', String(slotRegistration?.options?.name))
 check('body is a component', typeof slotRegistration?.component === 'function')
-check('the body is registered only inside a context that injects the namespace', injectCalls.some((deps) => deps.includes('remote.markdownDocs')), JSON.stringify(injectCalls))
-
-// Without the mount there is no namespace, so there is no editing pane that
-// cannot save: the body must not register at all.
-let bodyWithoutNamespace = false
-const unmountedCtx = Object.assign({}, fakeCtx, {
-  documentPreviews: { register: () => () => {} },
-  slots: { inject: (key, callback) => { callback() }, register: () => { bodyWithoutNamespace = true; return () => {} } },
-  remote: makeRemote({}),
-  inject: (deps, callback) => callback(Object.assign({}, fakeCtx, { remote: makeRemote({}) })),
-})
-await pluginObject.apply(unmountedCtx)
-check('no editing pane is offered when the writer is missing', bodyWithoutNamespace === false)
-
-// A mount that failed must say so, and must not be cached: the next reload has
-// to be able to retry rather than inherit the failure forever.
-let noticeComponent
-const failingCtx = Object.assign({}, fakeCtx, {
-  slots: { inject: (key, callback) => { callback() }, register: (options, component) => { noticeComponent = component; return () => {} } },
-  remote: { $mount: async () => { throw new Error('client api: contribution repeats direct method markdownDocs/write') } },
-})
-// The client half caches its mount in its own global, which is the sandbox.
-const previousMount = sandbox.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
-vm.runInContext('delete globalThis.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__', sandbox)
-await pluginObject.apply(failingCtx)
-check('a failed mount offers a body that explains itself', typeof noticeComponent === 'function')
-check('a failed mount is not cached for later reloads', vm.runInContext('globalThis.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined', sandbox) === true)
-sandbox.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = previousMount
 
 console.log('\nclient contribution')
 check('a contribution was mounted', contribution !== undefined)

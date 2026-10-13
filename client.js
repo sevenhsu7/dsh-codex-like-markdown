@@ -55,7 +55,6 @@ window.__ModuleLoader__.load({
 			'status.saved': 'Saved',
 			'status.stale': 'The file changed on disk',
 			'save.unavailable': 'Not connected to the file writer yet',
-			'start.failed': 'The Markdown editor could not start: ',
 			'action.save': 'Save',
 			'action.revert': 'Revert',
 			'action.overwrite': 'Overwrite',
@@ -96,7 +95,6 @@ window.__ModuleLoader__.load({
 			'status.saved': '已保存',
 			'status.stale': '文件已在磁盘上被修改',
 			'save.unavailable': '尚未连接到文件写入通道',
-			'start.failed': 'Markdown 编辑器启动失败：',
 			'action.save': '保存',
 			'action.revert': '撤销修改',
 			'action.overwrite': '仍然覆盖',
@@ -211,7 +209,6 @@ window.__ModuleLoader__.load({
 			'.' + P + '-addrow{padding:6px 6px 0}',
 			'.' + P + '-input{flex:1 1 auto;min-height:0;width:100%;box-sizing:border-box;resize:none;border:0;outline:none;background:transparent;color:inherit;padding:12px 14px;font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:13px;line-height:1.6;tab-size:2;white-space:pre;overflow:auto}',
 			'.' + P + '-input::placeholder{color:var(--dsw-alias-state-idle-primary)}',
-			'.' + P + '-notice{padding:12px 14px;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);word-break:break-word}',
 			'.' + P + '-seltools{position:absolute;z-index:5;display:flex;gap:2px;padding:3px;border-radius:8px;background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-1));border:1px solid var(--dsw-alias-border-l1);box-shadow:0 6px 20px rgba(0,0,0,.16);transform:translate(-50%,calc(-100% - 8px))}',
 			'.' + P + '-selbutton{appearance:none;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:20px;padding:1px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}',
 			'.' + P + '-selbutton:hover{background:var(--dsw-alias-bg-layer-2)}',
@@ -1321,7 +1318,7 @@ window.__ModuleLoader__.load({
 		 * @param t - the plugin's bound translator.
 		 * @returns the body component the document slot renders.
 		 */
-		function createBody(writer, t) {
+		function createBody(ctx, t) {
 			return function MarkdownEditorBody(props) {
 				const info = typeof props.useTabInfo === 'function' ? props.useTabInfo() : undefined
 				const tab = info !== undefined && info !== null ? info.tab : undefined
@@ -1330,29 +1327,10 @@ window.__ModuleLoader__.load({
 				return h(Editor, Object.assign({}, props, {
 					key: tab !== undefined && tab !== null ? tab.id : 'markdown-editor',
 					tabId: tab !== undefined && tab !== null ? tab.id : 'markdown-editor',
-					writer,
+					ctx,
 					t,
 					drafts,
 				}))
-			}
-		}
-
-		/**
-		 * A document body that explains why editing is unavailable.
-		 *
-		 * The pane is worth offering only when the writer namespace mounted, and a
-		 * mount that failed must say so rather than leave the built-in viewer's
-		 * return looking like the plugin was never there.
-		 * @param message - what the mount reported.
-		 * @param t - translation for the surrounding sentence.
-		 * @returns a body component.
-		 */
-		function createNoticeBody(message, t) {
-			return function MarkdownEditorNotice() {
-				return h('div', { className: P + '-notice' }, [
-					h('style', { key: 'style' }, CSS),
-					h('span', { key: 'text' }, t('start.failed') + message),
-				])
 			}
 		}
 
@@ -1363,7 +1341,7 @@ window.__ModuleLoader__.load({
 		 * @returns the editor view.
 		 */
 		function Editor(props) {
-			const { resourceAddress, content, scrollportRef, useResource, writer, t, drafts, tabId } = props
+			const { resourceAddress, content, scrollportRef, useResource, ctx, t, drafts, tabId } = props
 			const meta = typeof useResource === 'function' ? useResource(resourceAddress) : undefined
 			const absolutePath = meta !== undefined && meta !== null && meta.value !== undefined ? meta.value.absolutePath : undefined
 			const diskVersion = meta !== undefined && meta !== null && meta.value !== undefined ? meta.value.version : undefined
@@ -1411,7 +1389,8 @@ window.__ModuleLoader__.load({
 				if (current === null || current.saving) return
 				const text = typeof opts.text === 'string' ? opts.text : current.state.text
 				const expectedVersion = opts.force === true ? undefined : current.state.baseVersion
-				if (writer === undefined || writer === null || typeof writer.write !== 'function') {
+				const writer = writerNamespace(ctx)
+				if (writer === undefined || typeof writer.write !== 'function') {
 					setNotice({ kind: 'error', message: t('save.unavailable') })
 					setState((prev) => Object.assign({}, prev, { hold: true }))
 					return
@@ -1454,7 +1433,7 @@ window.__ModuleLoader__.load({
 				}
 				setState((prev) => Object.assign({}, prev, { hold: true }))
 				setNotice({ kind: 'error', message: value.message !== undefined ? value.message : 'save failed (' + String(value.status) + ')' })
-			}, [writer])
+			}, [ctx])
 
 			// Auto-save: write the buffer once editing pauses. Off means the user
 			// saves explicitly, with ⌘S or the toolbar.
@@ -1690,6 +1669,22 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * The mounted writer namespace, or `undefined` while it is not there.
+		 *
+		 * A Remote namespace is a `remote.<namespace>` child Service, and Cordis
+		 * refuses a plain property read of it unless the reader injects it. This
+		 * plugin is the side that creates it — `$mount` runs in `apply` — so
+		 * injecting it would be an edge onto a service this plugin is still
+		 * creating. `ctx.get` reads a service without the inject requirement.
+		 * @param ctx - the plugin's context.
+		 * @returns the namespace service, or `undefined`.
+		 */
+		function writerNamespace(ctx) {
+			if (ctx === undefined || ctx === null || typeof ctx.get !== 'function') return undefined
+			return ctx.get('remote.' + NAMESPACE)
+		}
+
+		/**
 		 * Split a document resource address into the Session and path it carries.
 		 *
 		 * The address grammar is `dsh-resource://file/session/<sessionId>/<path>`,
@@ -1734,7 +1729,7 @@ window.__ModuleLoader__.load({
 		 * contribution.
 		 * @param ctx - the plugin's Client Cordis context.
 		 */
-		async function apply(ctx) {
+		function apply(ctx) {
 			let translate = (key) => (EN[key] !== undefined ? EN[key] : key)
 			try {
 				ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh: ZH, en: EN }), 'markdown-editor: locale')
@@ -1755,80 +1750,24 @@ window.__ModuleLoader__.load({
 				wrap: false,
 			}), 'markdown-editor: metadata')
 
+			ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
+				name: 'sidebar.right.tab.document',
+				key: IMPLEMENTATION_ID,
+				locale: LOCALE_NS,
+			}, createBody(ctx, t)))
+
 			// The contribution is owned by the Remote service, so an HMR reload of
 			// this bundle must not mount it twice; one process-wide promise keeps
 			// the namespace alive across reloads.
-			let mountError
-			try {
-				const mounts = globalThis
-				if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined) {
-				const attempt = ctx.remote.$mount(CONTRIBUTION).then(() => undefined, (error) => {
-					// Only "already mounted" is terminal. A failure must not be
-					// cached, or every later reload would inherit it.
+			const mounts = globalThis
+			if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined) {
+				mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = ctx.remote.$mount(CONTRIBUTION).catch((error) => {
 					if (String(messageOf(error)).indexOf('already registered') >= 0) return undefined
-					if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === attempt) mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = undefined
+					mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = undefined
 					throw error
 				})
-				mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = attempt
 			}
-			// Wait for the namespace, but never forever: a mount that hangs must
-			// still leave a pane that says so rather than a plugin stuck loading.
-			let timer
-			const timeout = new Promise((resolve) => {
-				timer = setTimeout(() => resolve('the writer namespace did not answer'), 4000)
-			})
-			try {
-				mountError = await Promise.race([
-					mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__.then(() => undefined, (error) => messageOf(error)),
-					timeout,
-				])
-			} finally {
-				if (timer !== undefined) clearTimeout(timer)
-			}
-			} catch (error) {
-				// A mount that throws must not end apply: an apply that stops here
-				// leaves the preview reporting itself unavailable with nothing on
-				// screen to say why, which is how the failure stayed invisible.
-				mountError = messageOf(error)
-			}
-			if (mountError !== undefined) {
-				console.warn('markdown-editor: the writer namespace did not mount', mountError)
-				ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
-					name: 'sidebar.right.tab.document',
-					key: IMPLEMENTATION_ID,
-					locale: LOCALE_NS,
-				}, createNoticeBody(mountError, t)))
-				return
-			}
-
-			// A namespace is a `remote.<namespace>` child Service, readable only
-			// from a context that injects it. Mounting comes first and the body is
-			// registered inside that injected context, which is how the shipped
-			// client consumes its own namespaces; without the mount there is no
-			// writer, so there is no body to offer an editing pane that cannot save.
-			try {
-				const registration = ctx.inject(['remote.' + NAMESPACE, 'slots', 'documentPreviews', 'locale'], (bodyCtx) => {
-				bodyCtx.slots.inject('sidebar.right.tab.document', () => bodyCtx.slots.register({
-					name: 'sidebar.right.tab.document',
-					key: IMPLEMENTATION_ID,
-					locale: LOCALE_NS,
-				}, createBody(bodyCtx.remote[NAMESPACE], t)))
-			})
-			// The returned thenable resolves when the injected context is ready;
-			// a failure there must be visible rather than an unhandled rejection.
-				if (registration !== undefined && registration !== null && typeof registration.catch === 'function') {
-					registration.catch((error) => {
-						console.warn('markdown-editor: could not register the editing pane', error)
-					})
-				}
-			} catch (error) {
-				console.warn('markdown-editor: could not register the editing pane', error)
-				ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
-					name: 'sidebar.right.tab.document',
-					key: IMPLEMENTATION_ID,
-					locale: LOCALE_NS,
-				}, createNoticeBody(messageOf(error), t)))
-			}
+			void mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
 		}
 
 		return { inject, apply }

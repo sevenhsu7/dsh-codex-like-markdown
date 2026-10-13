@@ -206,18 +206,15 @@ const writer = {
     return writeImpl(payload)
   },
 }
-/** The mounted contribution face: only `$mount` lives here. */
+/** The writer namespace, as the mount installs it: a `remote.markdownDocs` child Service. */
+let writerMounted = true
 const mounted = { $mount: async () => () => {} }
-/**
- * A client Remote as Cordis exposes it. A namespace is a `remote.<namespace>`
- * child Service that is readable only inside a context that injects it, and a
- * plain property read of it is refused — so a body that was not registered
- * through such a context cannot silently fall back to this face.
- */
-const makeRemote = (namespaces) => new Proxy(mounted, {
+// Cordis refuses `remote.<namespace>` as a plain property read without an
+// injection edge, and the plugin cannot have that edge — it is the side
+// creating the namespace. This proxy is that refusal, so the mistake is loud.
+const remote = new Proxy(mounted, {
   get: (target, prop) => {
     if (typeof prop !== 'string' || prop in target || prop === 'then' || prop.startsWith('_')) return target[prop]
-    if (Object.prototype.hasOwnProperty.call(namespaces, prop)) return namespaces[prop]
     throw new Error('cannot get property "remote.' + prop + '" without inject')
   },
 })
@@ -228,12 +225,10 @@ const ctx = {
   locale: { register: () => () => {}, bind: () => (key) => key },
   documentPreviews: { register: () => () => {} },
   slots: { inject: (key, callback) => callback(), register: (options, component) => { Component = component; return () => {} } },
-  remote: makeRemote({}),
-  // Cordis runs the callback in a context that has the injected services; the
-  // namespace becomes readable exactly there.
-  inject: (deps, callback) => callback(Object.assign({}, ctx, { remote: makeRemote({ markdownDocs: writer }) })),
+  remote,
+  get: (name) => (name === 'remote.markdownDocs' && writerMounted ? writer : undefined),
 }
-await pluginObject.apply(ctx)
+pluginObject.apply(ctx)
 
 // ---------------------------------------------------------------------------
 // Drive the editor
@@ -525,6 +520,21 @@ await saveButton().props.onClick()
 await flush()
 check('the follow-up write uses the version the save returned', writeCalls[1]?.expectedVersion === 'v2', JSON.stringify(writeCalls[1]?.expectedVersion))
 
+console.log('\nthe write path when the namespace is not mounted')
+const beforeMissing = writeCalls.length
+writerMounted = false
+focusEditor()
+pressWindowKey('s', { metaKey: true })
+await flush()
+check('a save without the writer namespace reports it instead of throwing', find(tree, (node) => node !== null && node !== undefined && node.props !== undefined && node.props.children === 'save.unavailable') !== undefined)
+check('no write is attempted without the namespace', writeCalls.length === beforeMissing, String(writeCalls.length))
+writerMounted = true
+focusEditor()
+pressWindowKey('s', { metaKey: true })
+await flush()
+check('saving works again once it is mounted', writeCalls.length === beforeMissing + 1, String(writeCalls.length))
+
+console.log('\nstale file')
 writeImpl = async () => ({ ok: true, value: { status: 'stale', message: 'file changed since it was read' } })
 textarea().props.onChange({ target: { value: 'local edit\n' } })
 await flush()

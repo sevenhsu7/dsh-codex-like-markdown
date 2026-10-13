@@ -760,7 +760,9 @@ const baseElement = {
   firstElementChild: null,
   contains: () => true,
 }
-press(blocks()[0], { clientX: 130, clientY: 50, target: cellElement, currentTarget: baseElement, preventDefault() {} })
+// A press alone must open the cell: a release that lands elsewhere, or with
+// something selected, must not be able to swallow the click.
+blocks()[0].props.onMouseDown({ clientX: 130, clientY: 50, target: cellElement, currentTarget: baseElement, preventDefault() {} })
 await flush()
 check('clicking a cell opens a cell surface', find(tree, byClass('dshMdEditor-cell')) !== undefined)
 check('the table stays rendered underneath', renderedBlocks().length === 1, String(renderedBlocks().length))

@@ -1190,23 +1190,31 @@ window.__ModuleLoader__.load({
 							if (event.target.closest('.' + P + '-cell') !== null) return
 						}
 						if (isEditing) return
-						// The press is not consumed here: it may be the start of a
-						// selection, which has to stay available for quoting.
-						pressRef.current = { x: event.clientX, y: event.clientY, target: event.target, block }
+						// A table cell opens on the press itself. Waiting for the
+						// release made cells depend on that release landing in the
+						// same place with nothing selected, which is not what a click
+						// on a cell is guaranteed to do.
+						const hit = tableCellHit(event.target, event.currentTarget)
+						if (hit !== undefined) {
+							event.preventDefault()
+							openCell(block, event, hit)
+							return
+						}
+						// Anything else is not consumed here: the press may be the
+						// start of a selection, which has to stay available for
+						// quoting, so the release decides between click and drag.
+						pressRef.current = { x: event.clientX, y: event.clientY, blockStart: block.start }
 					},
 					onMouseUp: (event) => {
 						const press = pressRef.current
 						pressRef.current = null
-						if (press === null || press.block !== block) return
+						// Compare the block's own range, not the object: a re-render
+						// between press and release rebuilds the array.
+						if (press === null || press.blockStart !== block.start) return
 						// A drag selected text; a still press is a click to edit.
 						if (Math.abs(event.clientX - press.x) > 4 || Math.abs(event.clientY - press.y) > 4) return
 						const view = typeof window.getSelection === 'function' ? window.getSelection() : null
 						if (view !== null && view.isCollapsed === false) return
-						const hit = tableCellHit(press.target, event.currentTarget)
-						if (hit !== undefined) {
-							openCell(block, event, hit)
-							return
-						}
 						beginEdit(block, event)
 					},
 				}, isEditing

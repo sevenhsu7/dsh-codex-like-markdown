@@ -1769,11 +1769,20 @@ window.__ModuleLoader__.load({
 				})
 				mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = attempt
 			}
+			// Wait for the namespace, but never forever: a mount that hangs must
+			// still leave a pane that says so rather than a plugin stuck loading.
 			let mountError
+			let timer
+			const timeout = new Promise((resolve) => {
+				timer = setTimeout(() => resolve('the writer namespace did not answer'), 4000)
+			})
 			try {
-				await mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__
-			} catch (error) {
-				mountError = messageOf(error)
+				mountError = await Promise.race([
+					mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__.then(() => undefined, (error) => messageOf(error)),
+					timeout,
+				])
+			} finally {
+				if (timer !== undefined) clearTimeout(timer)
 			}
 			if (mountError !== undefined) {
 				console.warn('markdown-editor: the writer namespace did not mount', mountError)

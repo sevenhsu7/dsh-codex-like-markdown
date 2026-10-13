@@ -1489,11 +1489,23 @@ window.__ModuleLoader__.load({
 
 			// The mount is a browser-side step with no host-side trace, so while
 			// the writer is not ready the pane says what happened to it.
-			const writerReady = writerState.namespace === 'ready'
-			const writerReport = writerReady || mode === 'source'
-				? null
-				: h('div', { className: P + '-notice', key: 'writer' },
-					'mount: ' + writerState.mount + ' · namespace: ' + writerState.namespace)
+			// Shown unconditionally while this is being diagnosed: a mount failure
+			// happens in the browser and leaves no host-side trace, so this strip is
+			// the only place the reason can be read. The probes separate "this
+			// namespace is stuck" from "the whole mount path is stuck".
+			const probe = (() => {
+				try {
+					const gateway = typeof ctx.get === 'function' ? ctx.get('remote') : undefined
+					const shipped = typeof ctx.get === 'function' ? ctx.get('remote.workspaceFiles') : undefined
+					return 'remote: ' + (gateway === undefined ? 'absent' : 'present')
+						+ ' · $mount: ' + (gateway !== undefined && typeof gateway.$mount === 'function' ? 'fn' : 'missing')
+						+ ' · shipped namespace: ' + (shipped === undefined ? 'absent' : 'present')
+				} catch (error) {
+					return 'probe threw: ' + messageOf(error)
+				}
+			})()
+			const writerReport = h('div', { className: P + '-notice', key: 'writer' },
+				'mount: ' + writerState.mount + ' · namespace: ' + writerState.namespace + ' · ' + probe)
 
 			const dirty = state.text !== state.savedText
 			// The resource's version moving past the one this buffer is based on is

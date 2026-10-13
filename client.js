@@ -127,6 +127,54 @@ window.__ModuleLoader__.load({
 		const passthrough = () => ({ parse: (value) => value })
 
 		/** The Client projection of the plugin's own Remote namespace. */
+		/**
+		 * One descriptor of the same shape as the real one, for a namespace of its
+		 * own, so a mount that hangs can be narrowed to the contribution or to a
+		 * field inside it.
+		 * @param namespace - name to mount under.
+		 * @returns a descriptor.
+		 */
+		function probeDescriptor(namespace) {
+			return {
+				id: PACKAGE + '#' + namespace + '/write',
+				service: namespace,
+				namespace,
+				method: 'write',
+				invocation: { kind: 'direct' },
+				parameters: [{
+					name: 'request',
+					wire: 'request',
+					source: 'json',
+					codec: { mode: 'strict', typeSymbol: PACKAGE + '#' + namespace + '/write:request', create: passthrough },
+				}],
+				result: { mode: 'strict', typeSymbol: PACKAGE + '#' + namespace + '/write:result', create: passthrough },
+			}
+		}
+
+		/**
+		 * Mount progressively more of this plugin's shape and record what each does.
+		 * @param ctx - the plugin's context.
+		 */
+		async function probeMounts(ctx) {
+			const cases = [
+				['empty', { package: PACKAGE + '-probe', descriptors: [] }],
+				['simple', { package: PACKAGE + '-probe', descriptors: [probeDescriptor('mdProbeSimple')] }],
+				['real', CONTRIBUTION],
+			]
+			for (const [label, contribution] of cases) {
+				let outcome
+				try {
+					outcome = await Promise.race([
+						Promise.resolve().then(() => ctx.remote.$mount(contribution)).then(() => 'ok', (error) => 'error: ' + messageOf(error)),
+						new Promise((resolve) => setTimeout(() => resolve('pending'), 3000)),
+					])
+				} catch (error) {
+					outcome = 'threw: ' + messageOf(error)
+				}
+				writerState.probes = (writerState.probes === undefined ? '' : writerState.probes + ' · ') + label + '=' + outcome
+			}
+		}
+
 		const CONTRIBUTION = {
 			package: PACKAGE,
 			descriptors: [
@@ -1505,7 +1553,8 @@ window.__ModuleLoader__.load({
 				}
 			})()
 			const writerReport = h('div', { className: P + '-notice', key: 'writer' },
-				'mount: ' + writerState.mount + ' · namespace: ' + writerState.namespace + ' · ' + probe)
+				'mount: ' + writerState.mount + ' · namespace: ' + writerState.namespace + ' · ' + probe
+				+ (writerState.probes === undefined ? '' : ' · probes: ' + writerState.probes))
 
 			const dirty = state.text !== state.savedText
 			// The resource's version moving past the one this buffer is based on is
@@ -1792,6 +1841,7 @@ window.__ModuleLoader__.load({
 			// this bundle must not mount it twice; one process-wide promise keeps
 			// the namespace alive across reloads.
 			const record = (error) => { writerState.mount = error === undefined ? 'ok' : messageOf(error) }
+			if (writerState.probes === undefined) probeMounts(ctx)
 			try {
 				const registration = ctx.inject(['remote.' + NAMESPACE], (bodyCtx) => {
 					writerState.namespace = 'ready'

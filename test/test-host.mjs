@@ -183,7 +183,15 @@ const fakeCtx = {
     inject: (key, callback) => { callback() },
     register: (options, component) => { slotRegistration = { options, component }; styleCount += 1; return () => {} },
   },
-  remote: { $mount: async (value) => { contribution = value; return () => {} } },
+  // The plugin also mounts probe contributions while a mount failure is being
+  // diagnosed; those are not what this suite asserts.
+  remote: {
+    $mount: async (value) => {
+      const namespaces = (value?.descriptors ?? []).map((descriptor) => descriptor.namespace)
+      if (namespaces.includes('markdownDocs')) contribution = value
+      return () => {}
+    },
+  },
 }
 pluginObject.apply(fakeCtx)
 

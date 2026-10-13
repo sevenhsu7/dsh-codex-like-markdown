@@ -209,6 +209,7 @@ window.__ModuleLoader__.load({
 			'.' + P + '-addrow{padding:6px 6px 0}',
 			'.' + P + '-input{flex:1 1 auto;min-height:0;width:100%;box-sizing:border-box;resize:none;border:0;outline:none;background:transparent;color:inherit;padding:12px 14px;font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:13px;line-height:1.6;tab-size:2;white-space:pre;overflow:auto}',
 			'.' + P + '-input::placeholder{color:var(--dsw-alias-state-idle-primary)}',
+			'.' + P + '-notice{padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);word-break:break-word}',
 			'.' + P + '-seltools{position:absolute;z-index:5;display:flex;gap:2px;padding:3px;border-radius:8px;background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-1));border:1px solid var(--dsw-alias-border-l1);box-shadow:0 6px 20px rgba(0,0,0,.16);transform:translate(-50%,calc(-100% - 8px))}',
 			'.' + P + '-selbutton{appearance:none;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:20px;padding:1px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}',
 			'.' + P + '-selbutton:hover{background:var(--dsw-alias-bg-layer-2)}',
@@ -1486,6 +1487,14 @@ window.__ModuleLoader__.load({
 				return () => window.removeEventListener('keydown', onKeyDown, true)
 			}, [])
 
+			// The mount is a browser-side step with no host-side trace, so while
+			// the writer is not ready the pane says what happened to it.
+			const writerReady = writerState.namespace === 'ready'
+			const writerReport = writerReady || mode === 'source'
+				? null
+				: h('div', { className: P + '-notice', key: 'writer' },
+					'mount: ' + writerState.mount + ' · namespace: ' + writerState.namespace)
+
 			const dirty = state.text !== state.savedText
 			// The resource's version moving past the one this buffer is based on is
 			// the only reliable sign of a foreign write: our own save is not yet
@@ -1664,6 +1673,7 @@ window.__ModuleLoader__.load({
 						onClick: () => void save({}),
 					}, t('action.save')),
 				]),
+				writerReport,
 				body,
 			])
 		}
@@ -1680,6 +1690,7 @@ window.__ModuleLoader__.load({
 		 * @returns the namespace service, or `undefined`.
 		 */
 		function writerNamespace(ctx) {
+			if (writerState.writer !== undefined) return writerState.writer
 			if (ctx === undefined || ctx === null || typeof ctx.get !== 'function') return undefined
 			return ctx.get('remote.' + NAMESPACE)
 		}
@@ -1721,6 +1732,15 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		/**
+		 * What the namespace mount and its injection did.
+		 *
+		 * A mount failure happens in the browser and is invisible from the host,
+		 * so the pane reports it: without this the only trace is an error in a
+		 * console nobody is reading.
+		 */
+		const writerState = { mount: 'pending', namespace: 'pending', writer: undefined }
+
 		/** Service keys the browser half needs before it can register anything. */
 		const inject = ['slots', 'documentPreviews', 'remote', 'locale']
 
@@ -1759,6 +1779,19 @@ window.__ModuleLoader__.load({
 			// The contribution is owned by the Remote service, so an HMR reload of
 			// this bundle must not mount it twice; one process-wide promise keeps
 			// the namespace alive across reloads.
+			const record = (error) => { writerState.mount = error === undefined ? 'ok' : messageOf(error) }
+			try {
+				const registration = ctx.inject(['remote.' + NAMESPACE], (bodyCtx) => {
+					writerState.namespace = 'ready'
+					writerState.writer = bodyCtx.remote[NAMESPACE]
+				})
+				if (registration !== undefined && registration !== null && typeof registration.catch === 'function') {
+					registration.catch((error) => { writerState.namespace = messageOf(error) })
+				}
+			} catch (error) {
+				writerState.namespace = messageOf(error)
+			}
+
 			const mounts = globalThis
 			if (mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ === undefined) {
 				mounts.__DSH_CODEX_LIKE_MARKDOWN_REMOTE__ = ctx.remote.$mount(CONTRIBUTION).catch((error) => {

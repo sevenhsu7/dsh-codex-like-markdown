@@ -902,7 +902,14 @@ window.__ModuleLoader__.load({
 				'aria-label': t('editor.aria'),
 				spellCheck: false,
 				onInput: (event) => onText(domToText(event.currentTarget)),
-				onBlur: () => onCommit(),
+				onBlur: (event) => {
+					// A blur that lands nowhere is not the user leaving: it is the
+					// pane re-rendering under the caret, which a save can cause.
+					// Closing there would end the edit the user is still in.
+					if (event === undefined || event === null) return
+					if (event.relatedTarget === null || event.relatedTarget === undefined) return
+					onCommit()
+				},
 				onPaste: (event) => {
 					event.preventDefault()
 					const data = event.clipboardData
@@ -1421,6 +1428,7 @@ window.__ModuleLoader__.load({
 				}
 				const value = result.value === undefined || result.value === null ? {} : result.value
 				if (value.status === 'saved') {
+					ownVersions.current.add(String(value.version))
 					setState((prev) => Object.assign({}, prev, { savedText: text, baseVersion: value.version, hold: false }))
 					setNotice({ kind: 'saved' })
 					return
@@ -1448,6 +1456,11 @@ window.__ModuleLoader__.load({
 				}, AUTO_SAVE_DELAY_MS)
 				return () => clearTimeout(timer)
 			}, [save, saving, state.autoSave, state.hold, state.text, state.savedText])
+
+			// Versions this editor wrote itself. The preview only re-reads after a
+			// write, so until it does its version is one behind ours; comparing the
+			// two would report our own save as someone else's change.
+			const ownVersions = React.useRef(new Set())
 
 			const inputRef = React.useRef(null)
 
@@ -1497,6 +1510,7 @@ window.__ModuleLoader__.load({
 				&& typeof diskVersion === 'string'
 				&& typeof state.baseVersion === 'string'
 				&& diskVersion !== state.baseVersion
+				&& ownVersions.current.has(diskVersion) !== true
 
 			/** Restore the buffer to the last text known to be on disk. */
 			const revert = () => {

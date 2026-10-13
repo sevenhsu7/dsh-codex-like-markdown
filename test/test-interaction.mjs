@@ -906,5 +906,24 @@ check('no own caret mapping is used', typeof sandbox.document.createTreeWalker =
 richSurface().props.onKeyDown({ key: 'Escape', preventDefault() {} })
 await flush()
 
+// B: an auto-save must not close the block the user is typing in, and the
+// version it wrote must not come back as someone else's change.
+console.log('\nauto-save does not close the block or fake a foreign change')
+props = propsWith({ content: { kind: 'bytes', data: bytesOf('# Title\n\nfirst paragraph\n\n## Section') } })
+draw()
+await flush()
+press(blocks()[0], fakeEvent())
+await flush()
+richSurface().props.onInput({ currentTarget: domWithText('# Title changed') })
+await flush()
+check('the block is open before the save', find(tree, byClass('dshMdEditor-rich')) !== undefined)
+const versionBefore = writeCalls.length
+await saveButton().props.onClick()
+await flush()
+for (let beat = 0; beat < 6; beat += 1) await flush()
+check('the write happened', writeCalls.length > versionBefore, String(writeCalls.length))
+check('saving leaves the block open', find(tree, byClass('dshMdEditor-rich')) !== undefined)
+check('the version we just wrote is not reported as a foreign change', find(tree, (node) => node?.props?.children === 'status.stale') === undefined)
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : '\n' + failures + ' CHECK(S) FAILED')
 process.exit(failures === 0 ? 0 : 1)

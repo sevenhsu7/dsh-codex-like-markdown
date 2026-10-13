@@ -95,7 +95,7 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 
 ## 测试
 
-先抓取测试套件依赖的运行时包，再 `npm test`；见 [test/README.md](test/README.md)。181 条断言覆盖：宿主半经过**真实 Gateway 派发与真实文件写入**、正文经过**真实 React 渲染**、以及交互逻辑——其中最关键的一条是**把编辑面的标记剥掉后必须逐字节等于原 Markdown**。
+先抓取测试套件依赖的运行时包，再 `npm test`；见 [test/README.md](test/README.md)。185 条断言覆盖：宿主半经过**真实 Gateway 派发与真实文件写入**、正文经过**真实 React 渲染**、以及交互逻辑——其中最关键的一条是**把编辑面的标记剥掉后必须逐字节等于原 Markdown**。
 
 ## 许可
 
@@ -252,7 +252,7 @@ than failing: it waits on `slots`, `documentPreviews`, `remote`, and `locale`.
 ## Tests
 
 `npm test` after fetching the runtime packages the suites import; see
-[test/README.md](test/README.md). 181 checks cover the host half through a real
+[test/README.md](test/README.md). 185 checks cover the host half through a real
 Gateway dispatch and real filesystem writes, the body through a real React
 render, and the interaction logic — including the invariant that stripping the
 editing surface's markup returns the Markdown byte for byte.

@@ -6,6 +6,12 @@
 >
 > Markdown editing in place for the DSH right Sidebar: the document keeps its rendered look, and clicking a paragraph, a heading, or a table cell puts the caret exactly there.
 
+![Selecting a passage in the rendered document, with the Add to chat action bar above it](assets/selection-to-chat.png)
+
+*选中一段文字 → 添加至会话；也可以直接点段落，就地编辑。*
+
+*Select a passage to add it to the session, or click any paragraph to edit it in place.*
+
 ---
 
 ## 中文

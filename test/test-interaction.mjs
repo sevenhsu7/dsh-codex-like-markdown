@@ -165,6 +165,8 @@ const sandbox = {
     activeElement: null,
     baseURI: 'http://127.0.0.1:19387/',
     createRange: () => ({ selectNodeContents: () => {}, collapse: () => {}, startContainer: null, startOffset: 0 }),
+    addEventListener: (type, listener) => { documentListeners.set(type, listener) },
+    removeEventListener: (type) => { documentListeners.delete(type) },
   },
   NodeFilter: { SHOW_TEXT: 4 },
   window: {
@@ -280,6 +282,9 @@ function hostInstance(node) {
       nodeName: 'DIV',
       firstElementChild: null,
       contains: () => true,
+      scrollLeft: 0,
+      scrollTop: 0,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
       focus() { instance.focused = true },
       setSelectionRange: (start, end) => selectionCalls.push({ className, start, end }),
     }
@@ -366,6 +371,15 @@ const fakeEvent = () => ({
 })
 const changeEvent = (value) => ({ target: { value, style: {}, scrollHeight: 20 } })
 
+/** Document-level listeners the component registered, by event type. */
+const documentListeners = new Map()
+
+/** A click is a press and a release in the same place. */
+const press = (element, event) => {
+  element.props.onMouseDown(event)
+  element.props.onMouseUp(event)
+}
+
 const frame = () => new Promise((resolve) => setTimeout(resolve, 0))
 const flush = async () => { await frame(); await frame() }
 
@@ -398,7 +412,7 @@ check('offers both views with live selected', buttonWithText('mode.live').props[
 check('a clean document disables save', saveButton().props.disabled === true)
 
 console.log('\nin-place editing')
-blocks()[1].props.onMouseDown(fakeEvent())
+press(blocks()[1], fakeEvent())
 await flush()
 check('clicking a block opens an editing surface', richSurface() !== undefined)
 check('the edited block reports its editing state', blocks()[1].props['data-editing'] === 'true')
@@ -541,7 +555,7 @@ check('with auto-save off nothing is written', writeCalls.length === quiet, Stri
 console.log('\nno duplicate while a draft holds a blank line')
 buttonWithText('mode.live').props.onClick()
 await flush()
-blocks()[0].props.onMouseDown(fakeEvent())
+press(blocks()[0], fakeEvent())
 await flush()
 richSurface().props.onInput({ currentTarget: domWithText('a\n\nb') })
 await flush()
@@ -580,7 +594,7 @@ for (const sample of samples) {
   await flush()
   const first = blocks()[0]
   if (first === undefined) { roundTripFailures += 1; check('surface round-trip: ' + JSON.stringify(sample), false, 'no block'); continue }
-  first.props.onMouseDown(fakeEvent())
+  press(first, fakeEvent())
   await flush()
   const html = lastInstance('dshMdEditor-rich')?.innerHTML
   if (process.env.DEBUG_RT) console.log('DEBUG html=', JSON.stringify(html), 'surface=', richSurface() !== undefined, 'blocks=', blocks().length)
@@ -619,7 +633,7 @@ props = propsWith({ content: { kind: 'bytes', data: bytesOf(tableSource) } })
 draw()
 await flush()
 check('the table is one block', blocks().length === 1, String(blocks().length))
-blocks()[0].props.onMouseDown(fakeEvent())
+press(blocks()[0], fakeEvent())
 await flush()
 const tableHtml = lastInstance('dshMdEditor-rich')?.innerHTML
 check('editing a table renders a table', tableHtml.includes('<table') && tableHtml.includes('<th') && tableHtml.includes('<td'), tableHtml?.slice(0, 120))
@@ -654,7 +668,7 @@ await flush()
 props = propsWith({ content: { kind: 'bytes', data: bytesOf(mixed) } })
 draw()
 await flush()
-blocks()[0].props.onMouseDown(fakeEvent())
+press(blocks()[0], fakeEvent())
 await flush()
 const mixedHtml = lastInstance('dshMdEditor-rich')?.innerHTML
 check('prose around the table still renders', (mixedHtml.match(/<div class="dshMdEditor-line/g) || []).length >= 2, String(mixedHtml))
@@ -702,7 +716,7 @@ const baseElement = {
   firstElementChild: null,
   contains: () => true,
 }
-blocks()[0].props.onMouseDown({ clientX: 130, clientY: 50, target: cellElement, currentTarget: baseElement, preventDefault() {} })
+press(blocks()[0], { clientX: 130, clientY: 50, target: cellElement, currentTarget: baseElement, preventDefault() {} })
 await flush()
 check('clicking a cell opens a cell surface', find(tree, byClass('dshMdEditor-cell')) !== undefined)
 check('the table stays rendered underneath', renderedBlocks().length === 1, String(renderedBlocks().length))
@@ -712,7 +726,7 @@ check('the surface takes the cell type, not the type of its first emphasized run
 
 console.log('\na click inside the open cell surface stays in the cell')
 const surfaceElement = { nodeType: 1, nodeName: 'DIV', childNodes: [], closest: (selector) => (selector === '.dshMdEditor-cell' ? surfaceElement : null) }
-blocks()[0].props.onMouseDown({ clientX: 130, clientY: 50, target: surfaceElement, currentTarget: baseElement, preventDefault() {} })
+press(blocks()[0], { clientX: 130, clientY: 50, target: surfaceElement, currentTarget: baseElement, preventDefault() {} })
 await flush()
 check('the table is still rendered, not replaced by a block editor', renderedBlocks().length === 1, String(renderedBlocks().length))
 check('the cell surface is still the only editor', find(tree, byClass('dshMdEditor-cell')) !== undefined)
@@ -730,7 +744,7 @@ check('switching views ends the in-place cell session', find(tree, byClass('dshM
 check('the table is still rendered after the edit', renderedBlocks().length === 1)
 
 console.log('\nediting another cell of the same table')
-blocks()[0].props.onMouseDown({ clientX: 110, clientY: 50, target: firstCell, currentTarget: baseElement, preventDefault() {} })
+press(blocks()[0], { clientX: 110, clientY: 50, target: firstCell, currentTarget: baseElement, preventDefault() {} })
 await flush()
 find(tree, byClass('dshMdEditor-cell')).props.onInput({ currentTarget: domWithText('ONE') })
 await flush()
@@ -746,12 +760,89 @@ console.log('\ncell text stays on one line')
 props = propsWith({ content: { kind: 'bytes', data: bytesOf(cellSource) } })
 draw()
 await flush()
-blocks()[0].props.onMouseDown({ clientX: 130, clientY: 50, target: cellElement, currentTarget: baseElement, preventDefault() {} })
+press(blocks()[0], { clientX: 130, clientY: 50, target: cellElement, currentTarget: baseElement, preventDefault() {} })
 await flush()
 const cellSurface = find(tree, byClass('dshMdEditor-cell'))
 cellSurface.props.onKeyDown({ key: 'Enter', preventDefault() {} })
 await flush()
 check('enter closes the cell instead of adding a row', find(tree, byClass('dshMdEditor-cell')) === undefined)
+
+console.log('\nquoting a selection into the composer')
+const composer = {
+  captures: 0,
+  inserted: [],
+  captureInsertion() { this.captures += 1; return { draftRev: 7 } },
+  insertText(text, span) { this.inserted.push({ text, span }); return true },
+}
+props = propsWith({ content: { kind: 'bytes', data: bytesOf('# Title\n\nfirst paragraph\n\n## Section') }, inputActions: composer })
+draw()
+await flush()
+const container = find(tree, byClass('dshMdEditor-blocks'))
+container.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 })
+container.scrollLeft = 0
+container.scrollTop = 0
+
+// The block the selection starts in, and a range inside it.
+const sourceBlock = {
+  nodeType: 1,
+  firstElementChild: null,
+  contains: () => true,
+  closest: (selector) => (selector === '.dshMdEditor-block' ? sourceBlock : null),
+  getAttribute: (name) => (name === 'data-block' ? '1' : null),
+}
+const selectPassage = (text) => {
+  sandbox.window.getSelection = () => ({
+    rangeCount: 1,
+    isCollapsed: false,
+    toString: () => text,
+    removeAllRanges: () => {},
+    addRange: () => {},
+    getRangeAt: () => ({
+      commonAncestorContainer: {},
+      startContainer: sourceBlock,
+      getBoundingClientRect: () => ({ left: 40, top: 60, width: 120, height: 18 }),
+    }),
+  })
+  documentListeners.get('selectionchange')()
+}
+selectPassage('first paragraph')
+await flush()
+const bar = find(tree, byClass('dshMdEditor-seltools'))
+check('selecting text offers an action bar', bar !== undefined)
+check('the bar offers adding to the chat and editing', bar.props.children.map((button) => button.props.children).join('|') === 'selection.add|selection.edit', bar.props.children.map((button) => button.props.children).join('|'))
+check('the bar sits above the selection', bar.props.style.left === 100 && bar.props.style.top === 60, JSON.stringify(bar.props.style))
+
+bar.props.children[0].props.onMouseDown({ preventDefault() {} })
+await flush()
+check('the selection is sent as a quote with its source', composer.inserted.length === 1 && composer.inserted[0].text === '> selection.source `/work/notes.md`\n>\n> first paragraph\n\n', JSON.stringify(composer.inserted[0] && composer.inserted[0].text))
+check('the insertion action of the composer is used', composer.captures === 1 && composer.inserted[0].span.draftRev === 7, JSON.stringify(composer.inserted[0] && composer.inserted[0].span))
+check('quoting does not change the document', blocks().length === 3, String(blocks().length))
+check('the bar closes once it has been sent', find(tree, byClass('dshMdEditor-seltools')) === undefined)
+check('the composer is told the text was added', find(tree, byClass('dshMdEditor-selnote')).props.children === 'selection.added', String(find(tree, byClass('dshMdEditor-selnote')).props.children))
+
+selectPassage('first paragraph')
+await flush()
+find(tree, byClass('dshMdEditor-seltools')).props.children[1].props.onMouseDown({ preventDefault() {} })
+await flush()
+check('editing from the bar opens the block the selection is in', find(tree, byClass('dshMdEditor-rich')) !== undefined)
+check('the opened block is the selected one', String(lastInstance('dshMdEditor-rich')?.innerHTML).includes('first paragraph'), String(lastInstance('dshMdEditor-rich')?.innerHTML))
+find(tree, byClass('dshMdEditor-rich')).props.onKeyDown({ key: 'Escape', preventDefault() {} })
+await flush()
+
+console.log('\na press selects and a drag edits nothing')
+sandbox.window.getSelection = () => ({ rangeCount: 0, isCollapsed: true, toString: () => '', removeAllRanges: () => {}, addRange: () => {} })
+const plainTarget = { closest: () => null }
+const plainBase = { firstElementChild: null, contains: () => true }
+const dragBlock = () => blocks()[1]
+dragBlock().props.onMouseDown({ clientX: 10, clientY: 10, target: plainTarget, currentTarget: plainBase, preventDefault() {} })
+dragBlock().props.onMouseUp({ clientX: 90, clientY: 12, target: plainTarget, currentTarget: plainBase, preventDefault() {} })
+await flush()
+check('a drag across text does not open an editor', find(tree, byClass('dshMdEditor-rich')) === undefined)
+press(dragBlock(), { clientX: 10, clientY: 10, target: plainTarget, currentTarget: plainBase, preventDefault() {} })
+await flush()
+check('a still click still opens the editor', find(tree, byClass('dshMdEditor-rich')) !== undefined)
+find(tree, byClass('dshMdEditor-rich')).props.onKeyDown({ key: 'Escape', preventDefault() {} })
+await flush()
 
 console.log('\ncaret placement')
 await saveButton().props.onClick()
@@ -766,7 +857,7 @@ sandbox.document.caretRangeFromPoint = (x, y) => { hit = { x, y }; return { star
 props = propsWith({ content: { kind: 'bytes', data: bytesOf('The preview can edit in **place** right here') } })
 draw()
 await flush()
-blocks()[0].props.onMouseDown({
+press(blocks()[0], {
   clientX: 42, clientY: 24,
   target: { closest: () => null },
   currentTarget: { firstElementChild: null, contains: () => true },

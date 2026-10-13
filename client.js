@@ -45,6 +45,11 @@ window.__ModuleLoader__.load({
 			'block.empty': 'Click to start writing…',
 			'block.hint': 'Click a paragraph to edit it in place',
 			'block.add': 'Add paragraph',
+			'selection.add': 'Add to chat',
+			'selection.edit': 'Edit',
+			'selection.source': 'From',
+			'selection.added': 'Added to the composer',
+			'selection.failed': 'Could not add to the composer',
 			'status.ready': 'Ready',
 			'status.dirty': 'Unsaved changes',
 			'status.saving': 'Saving…',
@@ -80,6 +85,11 @@ window.__ModuleLoader__.load({
 			'block.empty': '点击开始输入…',
 			'block.hint': '点击任意段落即可就地修改',
 			'block.add': '新增段落',
+			'selection.add': '添加到对话',
+			'selection.edit': '编辑',
+			'selection.source': '摘自',
+			'selection.added': '已加入对话',
+			'selection.failed': '无法加入对话',
 			'status.ready': '就绪',
 			'status.dirty': '未保存的修改',
 			'status.saving': '保存中…',
@@ -171,7 +181,7 @@ window.__ModuleLoader__.load({
 			'.' + P + '-seg{display:flex;align-items:center;gap:1px;padding:1px;border-radius:7px;background:var(--dsw-alias-bg-layer-2)}',
 			'.' + P + '-seg .' + P + '-button[aria-pressed="true"]{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}',
 			'.' + P + '-primary{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}',
-			'.' + P + '-blocks{flex:1 1 auto;min-height:0;overflow:auto;padding:2px 6px 24px}',
+			'.' + P + '-blocks{position:relative;flex:1 1 auto;min-height:0;overflow:auto;padding:2px 6px 24px}',
 			'.' + P + '-block{position:relative;border-radius:6px;padding:1px 6px;cursor:text}',
 			'.' + P + '-block:hover{background:var(--dsw-alias-bg-layer-1)}',
 			'.' + P + '-block[data-editing="true"]{background:transparent;padding:0}',
@@ -202,6 +212,10 @@ window.__ModuleLoader__.load({
 			'.' + P + '-addrow{padding:6px 6px 0}',
 			'.' + P + '-input{flex:1 1 auto;min-height:0;width:100%;box-sizing:border-box;resize:none;border:0;outline:none;background:transparent;color:inherit;padding:12px 14px;font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:13px;line-height:1.6;tab-size:2;white-space:pre;overflow:auto}',
 			'.' + P + '-input::placeholder{color:var(--dsw-alias-state-idle-primary)}',
+			'.' + P + '-seltools{position:absolute;z-index:5;display:flex;gap:2px;padding:3px;border-radius:8px;background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-1));border:1px solid var(--dsw-alias-border-l1);box-shadow:0 6px 20px rgba(0,0,0,.16);transform:translate(-50%,calc(-100% - 8px))}',
+			'.' + P + '-selbutton{appearance:none;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:20px;padding:1px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}',
+			'.' + P + '-selbutton:hover{background:var(--dsw-alias-bg-layer-2)}',
+			'.' + P + '-selnote{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:6;padding:3px 10px;border-radius:6px;background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-1));border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;pointer-events:none}',
 		].join('')
 
 		/**
@@ -747,6 +761,34 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * The Markdown a selection is handed to the composer as.
+		 *
+		 * A quote plus its source, so the model can tell quoted context from the
+		 * request itself, and a blank line under it so typing a question after
+		 * the quote needs no extra keystroke.
+		 * @param text - the selected text.
+		 * @param label - the file it was selected from.
+		 * @param heading - the localised "From".
+		 * @returns the Markdown to insert into the draft.
+		 */
+		function quoteSelection(text, label, heading) {
+			const lines = String(text).replace(/[ \t]+$/, '').split('\n')
+			return '> ' + heading + ' `' + label + '`\n>\n' + lines.map((line) => '> ' + line).join('\n') + '\n\n'
+		}
+
+		/**
+		 * The rendered block an event or a range landed in.
+		 * @param node - a DOM node inside the document.
+		 * @returns the block element, or `undefined`.
+		 */
+		function blockElementOf(node) {
+			const element = node !== null && node !== undefined && node.nodeType === 3 ? node.parentNode : node
+			if (element === null || element === undefined || typeof element.closest !== 'function') return undefined
+			const found = element.closest('.' + P + '-block')
+			return found === null ? undefined : found
+		}
+
+		/**
 		 * Put the caret where the user clicked, using the browser's own hit test
 		 * on the editing surface the click just opened.
 		 * @param element - the editing surface.
@@ -930,16 +972,118 @@ window.__ModuleLoader__.load({
 		 * @returns the live document view.
 		 */
 		function LiveDocument(props) {
-			const { source, onSourceChange, labels, pathImages, t } = props
+			const { source, onSourceChange, labels, pathImages, sourceLabel, inputActions, t } = props
 			const blocks = React.useMemo(() => splitBlocks(source), [source])
 			const [editing, setEditing] = React.useState(null)
 			const [cell, setCell] = React.useState(null)
 			const [rect, setRect] = React.useState(null)
+			const [selected, setSelected] = React.useState(null)
+			const [note, setNote] = React.useState(null)
 			const editingRef = React.useRef(null)
 			const cellRef = React.useRef(null)
 			const closeCellRef = React.useRef(() => {})
+			const bodyRef = React.useRef(null)
+			const pressRef = React.useRef(null)
+			const noteTimer = React.useRef(null)
 			editingRef.current = editing
 			cellRef.current = cell
+
+			/**
+			 * Measure the current selection when it is a non-empty one inside
+			 * this document, so the action bar can sit where the user selected.
+			 */
+			const readSelection = () => {
+				const container = bodyRef.current
+				const view = typeof window.getSelection === 'function' ? window.getSelection() : null
+				if (container === null || view === null || view.rangeCount === 0 || view.isCollapsed === true) {
+					setSelected(null)
+					return
+				}
+				const text = String(view).trim()
+				if (text === '') {
+					setSelected(null)
+					return
+				}
+				try {
+					const range = view.getRangeAt(0)
+					if (typeof container.contains === 'function' && container.contains(range.commonAncestorContainer) !== true) {
+						setSelected(null)
+						return
+					}
+					const box = range.getBoundingClientRect()
+					const base = container.getBoundingClientRect()
+					setSelected({
+						text,
+						left: box.left - base.left + (container.scrollLeft === undefined ? 0 : container.scrollLeft) + box.width / 2,
+						top: box.top - base.top + (container.scrollTop === undefined ? 0 : container.scrollTop),
+					})
+				} catch (error) {
+					setSelected(null)
+				}
+			}
+
+			React.useEffect(() => {
+				if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return undefined
+				document.addEventListener('selectionchange', readSelection)
+				return () => document.removeEventListener('selectionchange', readSelection)
+			}, [])
+
+			/** Say something for a moment, then stop saying it. */
+			const flash = (message) => {
+				setNote(message)
+				if (typeof setTimeout !== 'function') return
+				if (noteTimer.current !== null) clearTimeout(noteTimer.current)
+				noteTimer.current = setTimeout(() => {
+					noteTimer.current = null
+					setNote(null)
+				}, 2400)
+			}
+
+			/**
+			 * Hand the selection to the composer as a quoted reference.
+			 *
+			 * The composer's own insertion action is used, so the text joins the
+			 * draft as one undoable edit at the caret instead of replacing what
+			 * the user already wrote.
+			 */
+			const sendSelection = () => {
+				const current = selected
+				if (current === null) return
+				const quote = quoteSelection(current.text, sourceLabel === undefined || sourceLabel === null ? 'Markdown' : sourceLabel, t('selection.source'))
+				let sent = false
+				if (inputActions !== undefined && inputActions !== null
+					&& typeof inputActions.captureInsertion === 'function'
+					&& typeof inputActions.insertText === 'function') {
+					try {
+						sent = inputActions.insertText(quote, inputActions.captureInsertion()) === true
+					} catch (error) {
+						console.warn('markdown-editor: could not hand the selection to the composer', error)
+					}
+				}
+				setSelected(null)
+				flash(sent ? t('selection.added') : t('selection.failed'))
+			}
+
+			/** Open the block the selection starts in, the way a click there would. */
+			const editSelection = () => {
+				const view = typeof window.getSelection === 'function' ? window.getSelection() : null
+				if (view === null || view.rangeCount === 0) return
+				let blockElement
+				let box
+				try {
+					const range = view.getRangeAt(0)
+					blockElement = blockElementOf(range.startContainer)
+					box = range.getBoundingClientRect()
+				} catch (error) {
+					return
+				}
+				if (blockElement === undefined || typeof blockElement.getAttribute !== 'function') return
+				const index = Number(blockElement.getAttribute('data-block'))
+				const block = Number.isFinite(index) ? blocks[index] : undefined
+				if (block === undefined) return
+				setSelected(null)
+				beginEdit(block, { currentTarget: blockElement, clientX: box.left, clientY: box.top })
+			}
 
 			// Re-measure after every render: typing changes the row, and the
 			// surface has to follow the cell rather than drift away from it.
@@ -1111,13 +1255,23 @@ window.__ModuleLoader__.load({
 							if (event.target.closest('.' + P + '-cell') !== null) return
 						}
 						if (isEditing) return
-						const hit = tableCellHit(event.target, event.currentTarget)
+						// The press is not consumed here: it may be the start of a
+						// selection, which has to stay available for quoting.
+						pressRef.current = { x: event.clientX, y: event.clientY, target: event.target, block }
+					},
+					onMouseUp: (event) => {
+						const press = pressRef.current
+						pressRef.current = null
+						if (press === null || press.block !== block) return
+						// A drag selected text; a still press is a click to edit.
+						if (Math.abs(event.clientX - press.x) > 4 || Math.abs(event.clientY - press.y) > 4) return
+						const view = typeof window.getSelection === 'function' ? window.getSelection() : null
+						if (view !== null && view.isCollapsed === false) return
+						const hit = tableCellHit(press.target, event.currentTarget)
 						if (hit !== undefined) {
-							event.preventDefault()
 							openCell(block, event, hit)
 							return
 						}
-						event.preventDefault()
 						beginEdit(block, event)
 					},
 				}, isEditing
@@ -1185,6 +1339,7 @@ window.__ModuleLoader__.load({
 			}
 
 			return h('div', {
+				ref: bodyRef,
 				className: P + '-blocks',
 				'aria-label': t('block.hint'),
 				onMouseDown: (event) => {
@@ -1193,6 +1348,33 @@ window.__ModuleLoader__.load({
 					closeCell()
 				},
 			}, children.concat([
+				// The bar for a selected passage: the text is context the model
+				// should see, and sending it is one action from where it was read.
+				selected === null ? null : h('div', {
+					key: 'seltools',
+					className: P + '-seltools',
+					style: { left: selected.left, top: selected.top },
+				}, [
+					h('button', {
+						key: 'add',
+						type: 'button',
+						className: P + '-selbutton',
+						onMouseDown: (event) => {
+							event.preventDefault()
+							sendSelection()
+						},
+					}, t('selection.add')),
+					h('button', {
+						key: 'edit',
+						type: 'button',
+						className: P + '-selbutton',
+						onMouseDown: (event) => {
+							event.preventDefault()
+							editSelection()
+						},
+					}, t('selection.edit')),
+				]),
+				note === null ? null : h('div', { key: 'selnote', className: P + '-selnote' }, note),
 				h('div', { key: 'add', className: P + '-addrow' },
 					h('button', {
 						type: 'button',
@@ -1491,6 +1673,8 @@ window.__ModuleLoader__.load({
 					onSourceChange: setText,
 					labels,
 					pathImages,
+					sourceLabel: absolutePath === undefined || absolutePath === null ? address.path : absolutePath,
+					inputActions: props.inputActions,
 					t,
 				})
 

@@ -23,6 +23,7 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 | 光标 | 点哪个字，光标就落在哪个字上，和普通文本编辑器一样 |
 | 打字 | 改动立即拼回文档，所以「未保存」状态与自动保存都是实时的（停顿约 1.2 秒自动保存）；`Esc` 或 `⌘Enter` 关闭当前块 |
 | 表格 | 表格保持渲染器自己的表格；点某一格只在**那一格**上浮出编辑面，也只回写那一格 |
+| 引用到对话 | 在预览里选中一段文字，浮出的操作条可以**添加到对话**（作为带出处的引用插进输入框）或**编辑**该段 |
 | 新增 | **+ 新增段落** 追加一个段落并打开它 |
 | 格式化 | **B** / *I* / `</>` / 🔗 给当前选区套上对应的 Markdown |
 | `⌘S` / `Ctrl+S` | 立即保存 |
@@ -37,6 +38,8 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 **Markdown 本身就是文本，从不反推。** 编辑面是一个 `contenteditable`，它的文本内容**就是**该块的 Markdown：语法标记仍在 DOM 里、但用 CSS 隐藏，加粗、代码、链接、标题、列表符号、引用、围栏都在标记周围做样式。**任何时候都不会把样式反向序列化成语法**，所以一次编辑只可能改变字符——不存在「富文本转 Markdown」这一步把文件改花的可能。读回内容就是对文本节点做一次遍历，浏览器自己生成的块级元素算作换行。
 
 **看起来像文档，是因为它是从文档上量出来的。** 打开一个块时，插件会读取该渲染块的计算样式（字族、字号、行高、内边距）套到编辑面上，所以进入编辑不会改变文档的字体。光标用浏览器自己的命中测试（`caretRangeFromPoint`）按你点击的坐标放置。
+
+**选中即上下文。** 在预览里选中文字会浮出一个操作条：*添加到对话* 把这段文字交给输入框自己的 `captureInsertion()` / `insertText()`——它是光标处的一次可撤销编辑，不会覆盖你已经写好的内容——并以「出处 + 引用块」的形式插入；*编辑* 打开这段文字所在的块。为了让拖拽始终能用于选择，「按下与松开在同一位置」才进入编辑，拖拽不会。
 
 **表格单元格按格编辑。** 表格是一个块，为了改一格而替换整张表不叫编辑——所以表格保持渲染器自己的表格，点某一格时只在那一格上浮出一个单格编辑面。单元格文本通过它在行内的**字节区间**改写，行内其它格、分隔行、表外内容一个字节都不动。编辑面每次渲染都重新量一次该格的位置，所以行变高时它会跟着走；它是单行的：回车即提交、粘贴进来的换行会变成空格，因此一次单元格编辑**不可能**多出一行。
 
@@ -77,11 +80,12 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 - 脚注与引用式链接只在单个块内解析，不跨文件。
 - 完整字节读取受预览的 `maxFileBytes`（32 MiB）限制。
 - 草稿存在浏览器内存里，生命周期为当前页面；刷新页面不保留。
+- 「添加到对话」依赖预览拿到输入框的 `inputActions`：没有活动会话的输入框时会提示「无法加入对话」；输入框正在提交时同样会被它拒绝。
 - 写入是整篇替换加可选的版本护栏。读与写之间发生的改动会被**检测到**而不是合并，谁覆盖谁由用户决定。
 
 ## 测试
 
-先抓取测试套件依赖的运行时包，再 `npm test`；见 [test/README.md](test/README.md)。161 条断言覆盖：宿主半经过**真实 Gateway 派发与真实文件写入**、正文经过**真实 React 渲染**、以及交互逻辑——其中最关键的一条是**把编辑面的标记剥掉后必须逐字节等于原 Markdown**。
+先抓取测试套件依赖的运行时包，再 `npm test`；见 [test/README.md](test/README.md)。173 条断言覆盖：宿主半经过**真实 Gateway 派发与真实文件写入**、正文经过**真实 React 渲染**、以及交互逻辑——其中最关键的一条是**把编辑面的标记剥掉后必须逐字节等于原 Markdown**。
 
 ## 许可
 
@@ -110,6 +114,7 @@ itself, as its own Remote namespace, and adds a renderer that uses it.
 | Caret | Clicking lands the caret on the character you clicked, like a plain text editor |
 | Typing | The edit is spliced into the document immediately, so the dirty state and auto-save stay live (auto-save after ~1.2 s idle); `Esc` or `⌘Enter` closes the block |
 | Tables | The table keeps the renderer's own table; clicking a cell opens an editor over **just that cell**, and only that cell is written back |
+| Quote to chat | Select a passage in the preview; the bar that appears adds it to the composer as a quote with its source, or opens that block for editing |
 | Adding | **+ Add paragraph** appends a paragraph and opens it |
 | Formatting | **B** / *I* / `</>` / 🔗 insert the Markdown around the selection |
 | `⌘S` / `Ctrl+S` | Saves immediately |
@@ -141,6 +146,8 @@ size, line height, padding — and applies it to the editing surface, so switchi
 into editing does not change the document's type. The caret is placed by the
 browser's own hit test (`caretRangeFromPoint`) at the coordinates that were
 clicked.
+
+**A selection is context.** Selecting text in the preview raises a small bar. *Add to chat* hands the passage to the composer through the composer's own `captureInsertion()` / `insertText()` actions — one undoable edit at the caret, so it never replaces what the user already wrote — as a quote carrying the file it came from. *Edit* opens the block the selection starts in. Because a drag has to stay available for selecting, a press and release in the same place opens an editor and a drag does not.
 
 **A table cell edits as a cell.** A table is one block, and replacing all of it
 to change one cell is not an edit — so a table keeps the renderer's own table on
@@ -223,6 +230,7 @@ than failing: it waits on `slots`, `documentPreviews`, `remote`, and `locale`.
 - Complete-bytes loading is bounded by the preview's `maxFileBytes` (32 MiB).
 - Drafts live in browser memory for the page's lifetime; they are not persisted
   across a page reload.
+- *Add to chat* needs the composer's `inputActions` from the slot: without a mounted composer it reports that it could not add the text, and the composer refuses the insert while it is submitting.
 - Writes are whole-document replaces with an optional version guard. A change made
   between the read and the write is detected, not merged, and the choice of what
   wins stays with the user.
@@ -230,7 +238,7 @@ than failing: it waits on `slots`, `documentPreviews`, `remote`, and `locale`.
 ## Tests
 
 `npm test` after fetching the runtime packages the suites import; see
-[test/README.md](test/README.md). 161 checks cover the host half through a real
+[test/README.md](test/README.md). 173 checks cover the host half through a real
 Gateway dispatch and real filesystem writes, the body through a real React
 render, and the interaction logic — including the invariant that stripping the
 editing surface's markup returns the Markdown byte for byte.

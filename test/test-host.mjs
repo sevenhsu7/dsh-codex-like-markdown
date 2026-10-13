@@ -35,10 +35,30 @@ const root = new Context()
 root.provide('sessions', {
   get: (id) => (id === 'sess-1' ? { header: { cwd: workspace } } : undefined),
 })
-root.provide('sandboxPolicy', { workspaceRoot: workspace })
+/** Every policy the plugin resolved, so the write can be checked against it. */
+const policyResolves = []
+root.provide('sandboxPolicy', {
+  workspaceRoot: workspace,
+  resolve: (request) => {
+    policyResolves.push(request)
+    // A session gets its own mode; an agentless call falls back to read-only.
+    return { mode: request.session === undefined ? 'read-only' : 'workspace-write', workspaceRoot: workspace }
+  },
+})
 
 await root.plugin(TypertRegistry)
 await root.plugin(LocalFileSystem)
+
+// The write must carry the policy for the session it belongs to; a workspace
+// write fenced by the profile's fallback mode is denied, which is exactly what
+// went wrong before.
+const writePolicies = []
+const fsService = root.get('fs')
+const realWriteText = fsService.writeText.bind(fsService)
+fsService.writeText = async (target, content, expected, release, policy) => {
+  writePolicies.push(policy)
+  return realWriteText(target, content, expected, release, policy)
+}
 console.log('mounted:', typeof root.get('fs')?.writeText === 'function' ? 'ctx.fs' : 'NO ctx.fs', typeof root.get('typert')?.register === 'function' ? 'ctx.typert' : 'NO ctx.typert')
 
 await root.plugin(plugin)
@@ -66,6 +86,8 @@ console.log('\nwrite')
 const saved = await service.write({ sessionId: 'sess-1', absolutePath: file, content: '# hello\nworld\n' })
 check('write reports saved', saved?.status === 'saved', JSON.stringify(saved))
 check('file content replaced', fs.readFileSync(file, 'utf8') === '# hello\nworld\n')
+check('the write carries a policy resolved for the session', writePolicies.length > 0 && writePolicies[0]?.mode === 'workspace-write', JSON.stringify(writePolicies[0]))
+check('the policy is resolved from the live session, not the deployment default', policyResolves.length > 0 && policyResolves[0]?.session !== undefined, JSON.stringify(policyResolves[0]))
 check('result carries the new version', typeof saved?.version === 'string' && saved.version.length > 0, JSON.stringify(saved))
 check('result carries the absolute path', saved?.absolutePath === file, String(saved?.absolutePath))
 check('result carries the byte count', saved?.bytes === 14, String(saved?.bytes))

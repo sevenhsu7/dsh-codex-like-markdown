@@ -39,7 +39,7 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 
 **看起来像文档，是因为它是从文档上量出来的。** 打开一个块时，插件会读取该渲染块的计算样式（字族、字号、行高、内边距）套到编辑面上，所以进入编辑不会改变文档的字体。光标用浏览器自己的命中测试（`caretRangeFromPoint`）按你点击的坐标放置。
 
-**选中即上下文。** 在预览里选中文字会浮出一个操作条，唯一的动作是把这段文字交给输入框自己的 `captureInsertion()` / `insertText()`——它是光标处的一次可撤销编辑，不会覆盖你已经写好的内容——并以「出处 + 引用块」的形式插入。为了让拖拽始终能用于选择，「按下与松开在同一位置」才进入编辑，拖拽不会。
+**选中即上下文。** 在预览里选中文字会浮出一个操作条，唯一的动作是把这段文字交给输入框自己的 `captureInsertion()` / `insertText()`——它是光标处的一次可撤销编辑，不会覆盖你已经写好的内容——并以「出处单独一行、下面是被引用的段落」的形式插入，末尾留一个空行——光标就落在那里，你可以直接接着提问。为了让拖拽始终能用于选择，「按下与松开在同一位置」才进入编辑，拖拽不会。
 
 **表格单元格按格编辑。** 表格是一个块，为了改一格而替换整张表不叫编辑——所以表格保持渲染器自己的表格，点某一格时只在那一格上浮出一个单格编辑面。单元格文本通过它在行内的**字节区间**改写，行内其它格、分隔行、表外内容一个字节都不动。编辑面每次渲染都重新量一次该格的位置，所以行变高时它会跟着走；它是单行的：回车即提交、粘贴进来的换行会变成空格，因此一次单元格编辑**不可能**多出一行。
 
@@ -85,7 +85,7 @@ DSH 自带的预览插件在自己的 README 里就写明了这个缺口：*"Pre
 
 ## 测试
 
-先抓取测试套件依赖的运行时包，再 `npm test`；见 [test/README.md](test/README.md)。175 条断言覆盖：宿主半经过**真实 Gateway 派发与真实文件写入**、正文经过**真实 React 渲染**、以及交互逻辑——其中最关键的一条是**把编辑面的标记剥掉后必须逐字节等于原 Markdown**。
+先抓取测试套件依赖的运行时包，再 `npm test`；见 [test/README.md](test/README.md)。176 条断言覆盖：宿主半经过**真实 Gateway 派发与真实文件写入**、正文经过**真实 React 渲染**、以及交互逻辑——其中最关键的一条是**把编辑面的标记剥掉后必须逐字节等于原 Markdown**。
 
 ## 许可
 
@@ -147,7 +147,7 @@ into editing does not change the document's type. The caret is placed by the
 browser's own hit test (`caretRangeFromPoint`) at the coordinates that were
 clicked.
 
-**A selection is context.** Selecting text in the preview raises a small bar with one action, which hands the passage to the composer through the composer's own `captureInsertion()` / `insertText()` — one undoable edit at the caret, so it never replaces what the user already wrote — as a quote carrying the file it came from. Because a drag has to stay available for selecting, a press and release in the same place opens an editor and a drag does not.
+**A selection is context.** Selecting text in the preview raises a small bar with one action, which hands the passage to the composer through the composer's own `captureInsertion()` / `insertText()` — one undoable edit at the caret, so it never replaces what the user already wrote — naming the file on its own line above the quoted passage and leaving a blank line under it, which is where the caret lands. Because a drag has to stay available for selecting, a press and release in the same place opens an editor and a drag does not.
 
 **A table cell edits as a cell.** A table is one block, and replacing all of it
 to change one cell is not an edit — so a table keeps the renderer's own table on
@@ -238,7 +238,7 @@ than failing: it waits on `slots`, `documentPreviews`, `remote`, and `locale`.
 ## Tests
 
 `npm test` after fetching the runtime packages the suites import; see
-[test/README.md](test/README.md). 175 checks cover the host half through a real
+[test/README.md](test/README.md). 176 checks cover the host half through a real
 Gateway dispatch and real filesystem writes, the body through a real React
 render, and the interaction logic — including the invariant that stripping the
 editing surface's markup returns the Markdown byte for byte.

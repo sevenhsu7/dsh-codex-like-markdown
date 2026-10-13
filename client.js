@@ -771,7 +771,11 @@ window.__ModuleLoader__.load({
 		 */
 		function quoteSelection(text, label, heading) {
 			const lines = String(text).replace(/[ \t]+$/, '').split('\n')
-			return '> ' + heading + ' `' + label + '`\n>\n' + lines.map((line) => '> ' + line).join('\n') + '\n\n'
+			// The file is named outside the quote, then the passage is quoted: the
+			// source is about the passage rather than part of it, and a bare `>`
+			// line would otherwise be needed to keep the two apart. The blank line
+			// under it is where the caret lands, so a question needs no keystroke.
+			return heading + ' `' + label + '`\n' + lines.map((line) => '> ' + line).join('\n') + '\n\n'
 		}
 
 		/**

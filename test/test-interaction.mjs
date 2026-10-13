@@ -814,7 +814,8 @@ check('the bar sits above the selection', bar.props.style.left === 100 && bar.pr
 
 bar.props.children[0].props.onMouseDown({ preventDefault() {} })
 await flush()
-check('the selection is sent as a quote with its source', composer.inserted.length === 1 && composer.inserted[0].text === '> selection.source `/work/notes.md`\n>\n> first paragraph\n\n', JSON.stringify(composer.inserted[0] && composer.inserted[0].text))
+check('the selection is sent as a named source and a quote under it', composer.inserted.length === 1 && composer.inserted[0].text === 'selection.source `/work/notes.md`\n> first paragraph\n\n', JSON.stringify(composer.inserted[0] && composer.inserted[0].text))
+check('a blank line is left under the quote to type on', composer.inserted[0].text.endsWith('\n\n'), JSON.stringify(composer.inserted[0].text.slice(-6)))
 check('the insertion action of the composer is used', composer.captures === 1 && composer.inserted[0].span.draftRev === 7, JSON.stringify(composer.inserted[0] && composer.inserted[0].span))
 check('quoting does not change the document', blocks().length === 3, String(blocks().length))
 check('the bar closes once it has been sent', find(tree, byClass('dshMdEditor-seltools')) === undefined)

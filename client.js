@@ -1751,13 +1751,20 @@ window.__ModuleLoader__.load({
 			// registered inside that injected context, which is how the shipped
 			// client consumes its own namespaces; without the mount there is no
 			// writer, so there is no body to offer an editing pane that cannot save.
-			ctx.inject(['remote.' + NAMESPACE, 'slots', 'documentPreviews', 'locale'], (bodyCtx) => {
+			const registration = ctx.inject(['remote.' + NAMESPACE, 'slots', 'documentPreviews', 'locale'], (bodyCtx) => {
 				bodyCtx.slots.inject('sidebar.right.tab.document', () => bodyCtx.slots.register({
 					name: 'sidebar.right.tab.document',
 					key: IMPLEMENTATION_ID,
 					locale: LOCALE_NS,
 				}, createBody(bodyCtx.remote[NAMESPACE], t)))
 			})
+			// The returned thenable resolves when the injected context is ready;
+			// a failure there must be visible rather than an unhandled rejection.
+			if (registration !== undefined && registration !== null && typeof registration.catch === 'function') {
+				registration.catch((error) => {
+					console.warn('markdown-editor: could not offer the editing pane', error)
+				})
+			}
 		}
 
 		return { inject, apply }

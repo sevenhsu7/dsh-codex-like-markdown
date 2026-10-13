@@ -26,8 +26,7 @@
     "cordis.patch.yml",
     "icon.svg",
     "locale/*.json",
-    "README.md",
-    "README.zh.md"
+    "README.md"
   ],
   "scripts": {
     "test": "node test/test-host.mjs && node test/test-client-render.mjs && node test/test-interaction.mjs",

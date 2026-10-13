@@ -46,7 +46,6 @@ window.__ModuleLoader__.load({
 			'block.hint': 'Click a paragraph to edit it in place',
 			'block.add': 'Add paragraph',
 			'selection.add': 'Add to chat',
-			'selection.edit': 'Edit',
 			'selection.source': 'From',
 			'selection.added': 'Added to the composer',
 			'selection.failed': 'Could not add to the composer',
@@ -85,11 +84,10 @@ window.__ModuleLoader__.load({
 			'block.empty': '点击开始输入…',
 			'block.hint': '点击任意段落即可就地修改',
 			'block.add': '新增段落',
-			'selection.add': '添加到对话',
-			'selection.edit': '编辑',
+			'selection.add': '添加至会话',
 			'selection.source': '摘自',
-			'selection.added': '已加入对话',
-			'selection.failed': '无法加入对话',
+			'selection.added': '已添加至会话',
+			'selection.failed': '无法添加至会话',
 			'status.ready': '就绪',
 			'status.dirty': '未保存的修改',
 			'status.saving': '保存中…',
@@ -777,18 +775,6 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * The rendered block an event or a range landed in.
-		 * @param node - a DOM node inside the document.
-		 * @returns the block element, or `undefined`.
-		 */
-		function blockElementOf(node) {
-			const element = node !== null && node !== undefined && node.nodeType === 3 ? node.parentNode : node
-			if (element === null || element === undefined || typeof element.closest !== 'function') return undefined
-			const found = element.closest('.' + P + '-block')
-			return found === null ? undefined : found
-		}
-
-		/**
 		 * Put the caret where the user clicked, using the browser's own hit test
 		 * on the editing surface the click just opened.
 		 * @param element - the editing surface.
@@ -1064,68 +1050,6 @@ window.__ModuleLoader__.load({
 				flash(sent ? t('selection.added') : t('selection.failed'))
 			}
 
-			/** Open the block the selection starts in, the way a click there would. */
-			const editSelection = () => {
-				const view = typeof window.getSelection === 'function' ? window.getSelection() : null
-				if (view === null || view.rangeCount === 0) return
-				let blockElement
-				let box
-				try {
-					const range = view.getRangeAt(0)
-					blockElement = blockElementOf(range.startContainer)
-					box = range.getBoundingClientRect()
-				} catch (error) {
-					return
-				}
-				if (blockElement === undefined || typeof blockElement.getAttribute !== 'function') return
-				const index = Number(blockElement.getAttribute('data-block'))
-				const block = Number.isFinite(index) ? blocks[index] : undefined
-				if (block === undefined) return
-				setSelected(null)
-				beginEdit(block, { currentTarget: blockElement, clientX: box.left, clientY: box.top })
-			}
-
-			// Re-measure after every render: typing changes the row, and the
-			// surface has to follow the cell rather than drift away from it.
-			React.useEffect(() => {
-				const anchors = cellRef.current === null ? null : cellRef.current.anchors
-				if (cell === null || anchors === null) return
-				let next
-				try {
-					const cellBox = anchors.element.getBoundingClientRect()
-					const baseBox = anchors.base.getBoundingClientRect()
-					// Cover the cell's content box only: the table's own rules
-					// around the cell must stay visible while it is edited, or the
-					// table appears to break apart.
-					const computed = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(anchors.element) : undefined
-					const edge = (name) => {
-						const value = computed === undefined ? 0 : parseFloat(computed[name])
-						return Number.isFinite(value) ? value : 0
-					}
-					const left = edge('borderLeftWidth')
-					const right = edge('borderRightWidth')
-					const top = edge('borderTopWidth')
-					const bottom = edge('borderBottomWidth')
-					next = {
-						left: cellBox.left - baseBox.left + left,
-						top: cellBox.top - baseBox.top + top,
-						width: Math.max(0, cellBox.width - left - right),
-						height: Math.max(0, cellBox.height - top - bottom),
-						background: computed === undefined || computed.backgroundColor === 'rgba(0, 0, 0, 0)'
-							? 'var(--dsw-alias-bg-base)'
-							: computed.backgroundColor,
-					}
-				} catch (error) {
-					// A cell that left the DOM ends the session instead of breaking it.
-					console.warn('markdown-editor: cell surface lost its cell', error)
-					closeCellRef.current()
-					return
-				}
-				setRect((previous) => (previous !== null && previous.left === next.left && previous.top === next.top
-					&& previous.width === next.width && previous.height === next.height
-					&& previous.background === next.background ? previous : next))
-			})
-
 			/** Close the block editing surface; its text is already in the document. */
 			const commit = () => {
 				editingRef.current = null
@@ -1364,15 +1288,6 @@ window.__ModuleLoader__.load({
 							sendSelection()
 						},
 					}, t('selection.add')),
-					h('button', {
-						key: 'edit',
-						type: 'button',
-						className: P + '-selbutton',
-						onMouseDown: (event) => {
-							event.preventDefault()
-							editSelection()
-						},
-					}, t('selection.edit')),
 				]),
 				note === null ? null : h('div', { key: 'selnote', className: P + '-selnote' }, note),
 				h('div', { key: 'add', className: P + '-addrow' },
